@@ -76,7 +76,7 @@ Configure your **[tasks configuration file](TASKS.md)**
 
 ## 🖼️  Web optimizer
 
-The separate web target lets you search an existing Immich server, compare fixed image-compression profiles, and selectively upload smaller results. It uses `@immich/sdk` on the server; the Immich API key is not sent to the browser. The existing proxy image remains the default GoReleaser target.
+The separate web target lets you search an existing Immich server, compare fixed image-compression profiles, and selectively upload smaller results. The UI is a React SPA built with Vite and the server is a [Hono](https://hono.dev) app served by Node; `@immich/sdk` is used only server-side, so the Immich API key is never sent to the browser. The existing proxy image remains the default GoReleaser target.
 
 Build from the repository root:
 
@@ -131,9 +131,22 @@ Set `IMMICH_URL` to the server root, for example `http://immich-server:2283` (a 
 
 The Immich API key needs `asset.read`, `asset.download`, `asset.upload`, `album.read`, `albumAsset.create`, and `tag.asset`; add `asset.delete` only if you enable original deletion. The UI uses HTTP Basic authentication with username `optimizer` and the password from `WEB_PASSWORD`/`WEB_PASSWORD_FILE`. The service binds to port 3000 inside the container; this Compose example publishes it only on localhost. Use a trusted network or HTTPS reverse proxy for remote access. HTTP Basic authentication does not encrypt credentials.
 
-The UI searches still images by capture date and/or album. It accepts JPEG, HEIC, and HEIF; paired Live Photo video IDs are preserved and verified. Selecting multiple profiles optimizes every selected image up front, three at a time, and then presents each image's candidates for an individual decision, highlighting the smallest eligible one. Selecting one profile creates a batch review with an explicit apply step. Candidates that are not strictly smaller cannot be uploaded. Original deletion is off by default and happens only after the new asset, tags, and album memberships are verified.
+The UI searches still images by capture date and/or album, excluding anything in the Immich trash. It accepts JPEG, HEIC, and HEIF; paired Live Photo video IDs are preserved and verified. Selecting multiple profiles optimizes every selected image up front, three at a time, and then presents each image's candidates for an individual decision, highlighting the smallest eligible one. Selecting one profile creates a batch review with an explicit apply step. Candidates that are not strictly smaller cannot be uploaded. Original deletion is off by default and happens only after the new asset, tags, and album memberships are verified.
 
 Each run is limited to 100 images, and individual source files over 1 GiB are skipped. Every mode stages one candidate per selected profile for every selected image under `/data` until you decide on or apply them, so provide enough free space. Temporary candidates are cleared on container restart; prepared originals are never changed.
+
+### Local development
+
+`web/` holds both halves: `web/src` is the Hono server and `web/client` is the React SPA.
+
+```sh
+cd web
+npm ci
+npm run build        # tsc for the server, Vite for the SPA
+IMMICH_URL=http://127.0.0.1:2283 IMMICH_API_KEY=… WEB_PASSWORD=… npm start
+```
+
+For a live-reloading SPA, run the server (`npm start`) and Vite (`npm run dev`) side by side; Vite proxies `/api` and `/healthz` to port 3000. `npm run typecheck` checks both halves, and `npm run build` is what the Docker web target runs.
 
 
 ## 🚩 Flags

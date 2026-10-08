@@ -40,8 +40,9 @@ dockers:
     - web/package.json
     - web/package-lock.json
     - web/tsconfig.json
+    - web/vite.config.ts
     - web/src
-    - web/public
+    - web/client
     - LICENSE
   -
     goos: linux
@@ -66,8 +67,9 @@ dockers:
     - web/package.json
     - web/package-lock.json
     - web/tsconfig.json
+    - web/vite.config.ts
     - web/src
-    - web/public
+    - web/client
 docker_manifests:
   - 
     name_template: ghcr.io/joojoooo/{{ .ProjectName }}:latest

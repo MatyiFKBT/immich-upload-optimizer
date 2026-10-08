@@ -4,14 +4,26 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "tsc -p tsconfig.json",
+    "build:client": "vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p client/tsconfig.json",
+    "dev": "vite",
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "@immich/sdk": "3.3.0-rc.0"
+    "@hono/node-server": "^2.1.4",
+    "@immich/sdk": "3.3.0-rc.0",
+    "hono": "^4.13.13"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
-    "typescript": "^5.8.3"
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4"
   }
 }

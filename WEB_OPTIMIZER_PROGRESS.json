@@ -14,10 +14,10 @@
     },
     {
       "id": "web-service-and-auth",
-      "title": "Add Node/TypeScript service, server-side @immich/sdk client, configuration, and authentication",
+      "title": "Add Hono service, server-side @immich/sdk client, configuration, and authentication",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "Server-side @immich/sdk 3.3.0-rc.0 client, environment/secret loading, Basic auth, and same-origin API routes are implemented."
+      "notes": "Hono app on @hono/node-server with the server-side @immich/sdk 3.3.0-rc.0 client, environment/secret loading, Basic auth, JSON body limits, same-origin checks, security headers, and error-to-status mapping."
     },
     {
       "id": "immich-search",
@@ -45,7 +45,7 @@
       "title": "Add search, selection, comparison, progress, and apply UI flows",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "Multi-profile runs optimize all selected images up front, three concurrently, then compare them one decision at a time with the smallest candidate highlighted; single-profile runs show a batch table with explicit apply."
+      "notes": "React SPA (Vite) with search, grid, profile selection, run controls, compare list, and batch review. Multi-profile runs optimize all selected images up front, three concurrently, then compare them one decision at a time with the smallest candidate highlighted; single-profile runs show a batch table with explicit apply. Stable React keys keep thumbnails attached across polls."
     },
     {
       "id": "docker-and-documentation",
@@ -59,7 +59,7 @@
       "title": "User runs build, tests, and deployment verification",
       "status": "pending_user",
       "progress_percent": 10,
-      "notes": "TypeScript compilation succeeded earlier. No functional smoke or Docker image build was completed; remaining validation is left to the user as requested."
+      "notes": "Hono server typechecks and compiles, and the Vite SPA build succeeds with no inline script/style in the emitted HTML. No runtime smoke test or Docker image build was performed; remaining validation is left to the user as requested."
     }
   ]
 }

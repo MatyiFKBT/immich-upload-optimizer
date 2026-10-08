@@ -22,7 +22,8 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 
 ## Architecture and deployment
 
-- Add a Node/TypeScript backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
+- Add a Hono/Node backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
+- Build the UI as a React SPA bundled by Vite; React reconciliation keeps asset thumbnails attached to stable element keys, so polling never re-creates or re-requests them.
 - Pin `@immich/sdk` to `3.3.0-rc.0`, matching `immich-openapi-specs.json`; use its stable nested date/album/type filter and cursor pagination rather than deprecated flat search fields.
 - The backend owns temporary downloads and candidate files and invokes only fixed, built-in optimizer profiles. Do not execute user-supplied commands or construct shell command strings from request data.
 - Configure the Immich URL and API key using Docker environment variables or secret files. Require a separate web UI password because this service can mutate and delete assets. Document that it must be exposed only on a trusted network or through HTTPS.
@@ -32,7 +33,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 ## Implementation steps
 
 1. Create this plan and `WEB_OPTIMIZER_PROGRESS.json` with implementation states.
-2. Add the Node/TypeScript web service, server-side SDK client, configuration/secrets loading, authentication, and safe same-origin API routes.
+2. Add the Hono web service, server-side SDK client, configuration/secrets loading, authentication, and safe same-origin API routes.
 3. Implement Immich album/date search, paginated asset selection, metadata retrieval, and thumbnail access needed by the UI.
 4. Implement the fixed optimization profiles, bounded-concurrency processing, candidate size comparison, and temporary-file cleanup.
 5. Implement the upload → copy tags/albums → verify → optional delete transaction. Fail closed: never delete the original on an upload, metadata, verification, or communication error.

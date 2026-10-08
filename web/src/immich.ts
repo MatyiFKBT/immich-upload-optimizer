@@ -85,9 +85,10 @@ export async function searchImages(options: {
 }): Promise<{ items: SearchAsset[]; nextCursor: string | null; total: number }> {
   const filter: {
     type: { eq: AssetTypeEnum };
+    trashedAt: { eq: null };
     albumIds?: { any: string[] };
     takenAt?: { gte?: string; lte?: string };
-  } = { type: { eq: AssetTypeEnum.Image } };
+  } = { type: { eq: AssetTypeEnum.Image }, trashedAt: { eq: null } };
   if (options.albumId) filter.albumIds = { any: [options.albumId] };
   if (options.from || options.to) {
     const takenAt: { gte?: string; lte?: string } = {};
