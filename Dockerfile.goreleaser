@@ -74,7 +74,7 @@ RUN CAESIUM_VER=$(curl -sf https://api.github.com/repos/Lymphatus/caesium-clt/re
     mv "/tmp/caesiumclt" /usr/local/bin/caesiumclt && \
     rm -fr /tmp/*
 
-FROM debian:sid-slim
+FROM debian:sid-slim AS optimizer-runtime
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get -y update && apt-get install -qq -y --no-install-recommends \
     #libvips-tools \
@@ -104,9 +104,29 @@ RUN apt-get -y update && apt-get install -qq -y --no-install-recommends \
 COPY --from=builder /usr/local /usr/local
 ENV LD_LIBRARY_PATH=/usr/local/lib
 RUN ldconfig
+FROM node:22-bookworm-slim AS web-build
+WORKDIR /opt/immich-web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build && npm prune --omit=dev
 
+FROM optimizer-runtime AS web
+RUN apt-get -y update && apt-get install -qq -y --no-install-recommends ca-certificates nodejs \
+    && apt-get clean && rm -fr /var/lib/apt/lists/*
+WORKDIR /opt/immich-web
+COPY --from=web-build /opt/immich-web/package.json ./package.json
+COPY --from=web-build /opt/immich-web/node_modules ./node_modules
+COPY --from=web-build /opt/immich-web/dist ./dist
+COPY --from=web-build /opt/immich-web/public ./public
+RUN mkdir -p /data && chown -R 10001:10001 /data /opt/immich-web
+ENV NODE_ENV=production WEB_HOST=0.0.0.0 WEB_PORT=3000 WEB_DATA_DIR=/data
+USER 10001:10001
+EXPOSE 3000
+CMD ["node", "/opt/immich-web/dist/server.js"]
+
+FROM optimizer-runtime AS proxy
 COPY config /etc/immich-upload-optimizer/config
 ENV IUO_TASKS_FILE=/etc/immich-upload-optimizer/config/lossy_avif.yaml
-
 COPY immich-upload-optimizer /usr/local/bin/
 CMD ["immich-upload-optimizer"]

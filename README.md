@@ -74,6 +74,68 @@ docker compose up -d
 ```
 Configure your **[tasks configuration file](TASKS.md)**
 
+## 🖼️  Web optimizer
+
+The separate web target lets you search an existing Immich server, compare fixed image-compression profiles, and selectively upload smaller results. It uses `@immich/sdk` on the server; the Immich API key is not sent to the browser. The existing proxy image remains the default GoReleaser target.
+
+Build from the repository root:
+
+```sh
+docker build -f Dockerfile.goreleaser --target web -t immich-web-media-optimizer:local .
+```
+
+Example Compose service (create protected secret files outside the repository):
+
+```yaml
+services:
+  immich-web-optimizer:
+    image: immich-web-media-optimizer:local
+    build:
+      context: .
+      dockerfile: Dockerfile.goreleaser
+      target: web
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      IMMICH_URL: http://immich-server:2283
+      IMMICH_API_KEY_FILE: /run/secrets/immich_api_key
+      WEB_PASSWORD_FILE: /run/secrets/web_password
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 3000
+      WEB_DATA_DIR: /data
+    secrets:
+      - immich_api_key
+      - web_password
+    volumes:
+      - optimizer-work:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+secrets:
+  immich_api_key:
+    file: /path/to/immich-api-key
+  web_password:
+    file: /path/to/web-password
+
+volumes:
+  optimizer-work:
+```
+
+Set `IMMICH_URL` to the server root, for example `http://immich-server:2283` (a trailing `/api` is accepted). `WEB_PASSWORD_FILE` must contain a password of at least 12 characters. Protect both secret files and do not commit them. You can use `IMMICH_API_KEY` and `WEB_PASSWORD` directly instead of their `_FILE` forms, but do not place those values in source control.
+
+The Immich API key needs `asset.read`, `asset.download`, `asset.upload`, `album.read`, `albumAsset.create`, and `tag.asset`; add `asset.delete` only if you enable original deletion. The UI uses HTTP Basic authentication with username `optimizer` and the password from `WEB_PASSWORD`/`WEB_PASSWORD_FILE`. The service binds to port 3000 inside the container; this Compose example publishes it only on localhost. Use a trusted network or HTTPS reverse proxy for remote access. HTTP Basic authentication does not encrypt credentials.
+
+The UI searches still images by capture date and/or album. It accepts JPEG, HEIC, and HEIF; paired Live Photo video IDs are preserved and verified. Multiple profiles are compared one image at a time; one selected profile creates a batch review with an explicit apply step. Candidates that are not strictly smaller cannot be uploaded. Original deletion is off by default and happens only after the new asset, tags, and album memberships are verified.
+
+Each run is limited to 100 images, and individual source files over 1 GiB are skipped. A one-profile batch stages eligible candidates under `/data` until you apply or skip them, so provide enough free space. Temporary candidates are cleared on container restart; prepared originals are never changed.
+
+
 ## 🚩 Flags
 All flags are also available as environment variables using the prefix `IUO_` followed by the uppercase flag.
 - `-upstream`: The URL of the Immich server (default: `http://immich-server:2283`)

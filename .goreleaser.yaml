@@ -28,6 +28,7 @@ dockers:
     build_flag_templates:
     - "--pull"
     - "--platform=linux/amd64"
+    - "--target=proxy"
     - "--label=org.opencontainers.image.created={{.Date}}"
     - "--label=org.opencontainers.image.title={{.ProjectName}}"
     - "--label=org.opencontainers.image.revision={{.FullCommit}}"
@@ -36,6 +37,11 @@ dockers:
     - "--label=org.opencontainers.image.source=https://github.com/joojoooo/{{ .ProjectName }}"
     extra_files:
     - config
+    - web/package.json
+    - web/package-lock.json
+    - web/tsconfig.json
+    - web/src
+    - web/public
     - LICENSE
   -
     goos: linux
@@ -48,6 +54,7 @@ dockers:
     - "--pull"
     - "--platform=linux/arm64/v8"
     - "--label=org.opencontainers.image.created={{.Date}}"
+    - "--target=proxy"
     - "--label=org.opencontainers.image.title={{.ProjectName}}"
     - "--label=org.opencontainers.image.revision={{.FullCommit}}"
     - "--label=org.opencontainers.image.version={{.Version}}"
@@ -56,6 +63,11 @@ dockers:
     extra_files:
     - config
     - LICENSE
+    - web/package.json
+    - web/package-lock.json
+    - web/tsconfig.json
+    - web/src
+    - web/public
 docker_manifests:
   - 
     name_template: ghcr.io/joojoooo/{{ .ProjectName }}:latest
