@@ -45,7 +45,7 @@
       "title": "Add search, selection, comparison, progress, and apply UI flows",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "Multi-profile runs compare one image at a time; single-profile runs show a batch table with explicit apply."
+      "notes": "Multi-profile runs optimize all selected images up front, three concurrently, then compare them one decision at a time with the smallest candidate highlighted; single-profile runs show a batch table with explicit apply."
     },
     {
       "id": "docker-and-documentation",

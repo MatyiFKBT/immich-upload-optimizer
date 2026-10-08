@@ -6,6 +6,7 @@ const state = {
   nextCursor: null,
   batchId: localStorage.getItem('immichOptimizerBatchId'),
   batch: null,
+  batchContentSignature: null,
   pollTimer: null,
 };
 
@@ -215,7 +216,7 @@ async function startBatch() {
 function batchStatusLabel(batch) {
   const labels = {
     preparing: 'Preparing candidates',
-    'awaiting-choice': 'Choose a replacement',
+    'awaiting-choice': 'Choose replacements',
     review: 'Review batch results',
     applying: 'Applying selected replacements',
     complete: 'Complete',
@@ -286,45 +287,84 @@ function renderCandidateTable(batch) {
   return wrap;
 }
 
-function renderCompare(batch) {
-  const current = batch.items.find((item) => item.status === 'awaiting-choice');
-  if (!current) return renderCandidateTable(batch);
-  const section = document.createElement('div');
-  const heading = createTextElement('p', 'hint', `Image ${batch.items.indexOf(current) + 1} of ${batch.total}`);
-  const comparison = document.createElement('div');
-  comparison.className = 'current-comparison';
-  const image = document.createElement('img');
-  image.alt = current.originalFileName;
-  image.loading = 'lazy';
-  image.src = `/api/assets/${encodeURIComponent(current.assetId)}/thumbnail`;
-  const candidates = document.createElement('div');
-  candidates.className = 'candidate-list';
-  for (const candidate of current.candidates) {
-    const row = document.createElement('div');
-    row.className = 'candidate-row';
-    const details = document.createElement('div');
-    details.append(createTextElement('strong', '', candidate.label));
-    const sizeText = candidate.size === null ? candidate.error : `${formatBytes(candidate.size)} · ${candidate.eligible ? `${formatBytes(current.sourceSize - candidate.size)} smaller` : 'not smaller than original'}`;
-    details.append(createTextElement('small', '', `${sizeText}${candidate.error && candidate.eligible ? '' : ''}`));
-    const button = document.createElement('button');
-    button.className = 'button primary';
-    button.type = 'button';
-    button.textContent = candidate.eligible ? 'Replace with this' : 'Not eligible';
-    button.disabled = !candidate.eligible;
-    button.addEventListener('click', () => chooseCandidate(current.assetId, candidate.profileId));
-    row.append(details, button);
-    candidates.append(row);
+const itemStatusText = {
+  queued: 'Waiting to be processed…',
+  processing: 'Downloading and optimizing…',
+  applying: 'Uploading replacement and verifying metadata…',
+};
+
+function renderCompareItem(item, index, total) {
+  const card = document.createElement('div');
+  card.className = 'compare-item';
+  const header = document.createElement('div');
+  header.className = 'compare-item-head';
+  header.append(
+    createTextElement('span', 'asset-name', item.originalFileName),
+    createTextElement('span', 'hint', `Image ${index + 1} of ${total} · original ${formatBytes(item.sourceSize)}`),
+  );
+  card.append(header);
+
+  if (item.status === 'awaiting-choice') {
+    const comparison = document.createElement('div');
+    comparison.className = 'current-comparison';
+    const image = document.createElement('img');
+    image.alt = item.originalFileName;
+    image.loading = 'lazy';
+    image.src = `/api/assets/${encodeURIComponent(item.assetId)}/thumbnail`;
+    const candidates = document.createElement('div');
+    candidates.className = 'candidate-list';
+    const eligibleSizes = item.candidates.filter((candidate) => candidate.eligible && candidate.size !== null).map((candidate) => candidate.size);
+    const bestSize = eligibleSizes.length > 1 ? Math.min(...eligibleSizes) : null;
+    for (const candidate of item.candidates) {
+      const row = document.createElement('div');
+      row.className = candidate.size !== null && candidate.size === bestSize ? 'candidate-row best' : 'candidate-row';
+      const details = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = candidate.label;
+      if (candidate.size !== null && candidate.size === bestSize) {
+        const badge = createTextElement('span', 'best-badge', 'Smallest');
+        title.append(badge);
+      }
+      details.append(title);
+      const sizeText = candidate.size === null
+        ? candidate.error
+        : `${formatBytes(candidate.size)} · ${candidate.eligible ? `${formatBytes(item.sourceSize - candidate.size)} smaller` : 'not smaller than original'}`;
+      details.append(createTextElement('small', '', sizeText));
+      const button = document.createElement('button');
+      button.className = candidate.size !== null && candidate.size === bestSize ? 'button primary' : 'button secondary';
+      button.type = 'button';
+      button.textContent = candidate.eligible ? (candidate.size === bestSize ? 'Replace with smallest' : 'Replace with this') : 'Not eligible';
+      button.disabled = !candidate.eligible;
+      button.addEventListener('click', () => chooseCandidate(item.assetId, candidate.profileId));
+      row.append(details, button);
+      candidates.append(row);
+    }
+    comparison.append(image, candidates);
+    const actions = document.createElement('div');
+    actions.className = 'decision-actions';
+    const skip = document.createElement('button');
+    skip.type = 'button';
+    skip.className = 'button secondary';
+    skip.textContent = 'Keep original';
+    skip.addEventListener('click', () => chooseCandidate(item.assetId, null));
+    actions.append(skip);
+    card.append(comparison, actions);
+    return card;
   }
-  comparison.append(image, candidates);
-  const actions = document.createElement('div');
-  actions.className = 'decision-actions';
-  const skip = document.createElement('button');
-  skip.type = 'button';
-  skip.className = 'button secondary';
-  skip.textContent = 'Keep original and continue';
-  skip.addEventListener('click', () => chooseCandidate(current.assetId, null));
-  actions.append(skip);
-  section.append(heading, createTextElement('p', 'asset-name', current.originalFileName), createTextElement('p', 'hint', `Original: ${formatBytes(current.sourceSize)}`), comparison, actions);
+
+  const outcome = item.message ?? itemStatusText[item.status] ?? item.status;
+  const text = item.replacementId ? `${outcome} · replacement ${item.replacementId}` : outcome;
+  card.append(createTextElement('p', item.status === 'failed' ? 'failed-text' : 'hint', text));
+  return card;
+}
+
+function renderCompare(batch) {
+  const section = document.createElement('div');
+  const awaiting = batch.awaiting ?? batch.items.filter((item) => item.status === 'awaiting-choice').length;
+  section.append(createTextElement('p', 'hint', awaiting
+    ? `Every selected image is already optimized. ${awaiting} still need a decision.`
+    : 'All images have been decided.'));
+  batch.items.forEach((item, index) => section.append(renderCompareItem(item, index, batch.total)));
   return section;
 }
 
@@ -332,30 +372,53 @@ function renderBatch(batch) {
   state.batch = batch;
   elements.batchPanel.classList.remove('hidden');
   elements.batchStatus.textContent = batchStatusLabel(batch);
-  elements.batchSummary.textContent = `${Math.min(batch.currentIndex + (batch.currentIndex < batch.total ? 1 : 0), batch.total)} of ${batch.total} images · originals ${batch.deleteOriginal ? 'will be deleted only after verification' : 'will be kept'}`;
-  elements.batchContent.replaceChildren();
+  const progress = batch.mode === 'compare'
+    ? `${batch.resolved} of ${batch.total} images decided`
+    : `${Math.min(batch.currentIndex + (batch.currentIndex < batch.total ? 1 : 0), batch.total)} of ${batch.total} images`;
+  elements.batchSummary.textContent = `${progress} · originals ${batch.deleteOriginal ? 'will be deleted only after verification' : 'will be kept'}`;
   showMessage(elements.batchMessage, batch.error ?? '');
+  const signature = JSON.stringify([
+    batch.id,
+    batch.mode,
+    batch.status,
+    batch.deleteOriginal,
+    batch.error,
+    batch.items.map((item) => [item.assetId, item.status, item.message, item.sourceSize, item.replacementId, item.originalDeleted, item.candidates.map((candidate) => [candidate.profileId, candidate.size, candidate.eligible, candidate.error])]),
+  ]);
 
-  if (batch.status === 'preparing' || batch.status === 'applying') {
-    elements.batchContent.append(createTextElement('p', 'hint', batch.status === 'preparing' ? 'Downloading and optimizing one image at a time…' : 'Uploading replacements and verifying their Immich metadata…'));
-    elements.batchContent.append(renderCandidateTable(batch));
-  } else if (batch.mode === 'compare' && batch.status === 'awaiting-choice') {
-    elements.batchContent.append(renderCompare(batch));
-  } else if (batch.mode === 'batch' && batch.status === 'review') {
-    elements.batchContent.append(createTextElement('p', 'hint', 'Candidates are ready. Uncheck any image you want to leave unchanged, then explicitly apply the selected replacements.'));
-    elements.batchContent.append(renderCandidateTable(batch));
-    const apply = document.createElement('button');
-    apply.type = 'button';
-    apply.className = 'button primary';
-    apply.textContent = 'Apply selected replacements';
-    apply.addEventListener('click', applySelectedBatch);
-    elements.batchContent.append(apply);
-  } else {
-    elements.batchContent.append(renderCandidateTable(batch));
+  if (signature !== state.batchContentSignature) {
+    state.batchContentSignature = signature;
+    const previousChecks = new Map(
+      [...elements.batchContent.querySelectorAll('input[type="checkbox"][data-asset-id]')].map((checkbox) => [checkbox.dataset.assetId, checkbox.checked]),
+    );
+    elements.batchContent.replaceChildren();
+
+    if (batch.status === 'preparing' || batch.status === 'applying') {
+      elements.batchContent.append(createTextElement('p', 'hint', batch.status === 'preparing' ? 'Downloading and optimizing every selected image. Decisions unlock as soon as the run finishes.' : 'Uploading replacements and verifying their Immich metadata…'));
+      elements.batchContent.append(renderCandidateTable(batch));
+    } else if (batch.mode === 'compare' && batch.status === 'awaiting-choice') {
+      elements.batchContent.append(renderCompare(batch));
+    } else if (batch.mode === 'batch' && batch.status === 'review') {
+      elements.batchContent.append(createTextElement('p', 'hint', 'Candidates are ready. Uncheck any image you want to leave unchanged, then explicitly apply the selected replacements.'));
+      elements.batchContent.append(renderCandidateTable(batch));
+      const apply = document.createElement('button');
+      apply.type = 'button';
+      apply.className = 'button primary';
+      apply.textContent = 'Apply selected replacements';
+      apply.addEventListener('click', applySelectedBatch);
+      elements.batchContent.append(apply);
+    } else {
+      elements.batchContent.append(renderCandidateTable(batch));
+    }
+
+    for (const checkbox of elements.batchContent.querySelectorAll('input[type="checkbox"][data-asset-id]')) {
+      const previous = previousChecks.get(checkbox.dataset.assetId);
+      if (previous !== undefined) checkbox.checked = previous;
+    }
   }
 
   clearTimeout(state.pollTimer);
-  if (batch.status === 'preparing' || batch.status === 'applying') {
+  if (batch.status === 'preparing' || batch.status === 'applying' || batch.busy) {
     state.pollTimer = setTimeout(() => void refreshBatch(), 1100);
   } else {
     state.pollTimer = null;

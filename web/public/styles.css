@@ -81,8 +81,14 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--blue); }
 .not-smaller, .failed-text { color: var(--red); }
 .current-comparison { display: grid; grid-template-columns: minmax(150px, 260px) 1fr; gap: 20px; margin: 18px 0; }
 .current-comparison img { width: 100%; aspect-ratio: 4 / 3; border-radius: 9px; object-fit: cover; background: #e8edf3; }
+.compare-item { border: 1px solid var(--line); border-radius: 11px; padding: 14px 16px; margin-bottom: 12px; }
+.compare-item-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; }
+.compare-item-head .asset-name { margin: 0; }
+.compare-item .current-comparison { margin-bottom: 0; }
 .candidate-list { display: grid; gap: 9px; }
 .candidate-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid var(--line); border-radius: 9px; padding: 12px; }
+.candidate-row.best { border-color: var(--green); background: #f2fbf6; box-shadow: inset 3px 0 0 var(--green); }
+.best-badge { display: inline-block; margin-left: 8px; border-radius: 999px; padding: 2px 8px; color: #fff; background: var(--green); font-size: 10px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; vertical-align: 1px; }
 .candidate-row strong, .candidate-row small { display: block; }
 .candidate-row small { margin-top: 3px; color: var(--muted); font-size: 11px; }
 .decision-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }

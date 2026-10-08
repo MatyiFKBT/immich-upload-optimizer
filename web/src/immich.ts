@@ -198,12 +198,17 @@ export async function uploadReplacement(options: {
   livePhotoVideoId: string | null;
 }): Promise<{ id: string; status: string; checksum: string }> {
   const checksum = await sha1Base64(options.filePath);
-  const assetData = await openAsBlob(options.filePath, { type: options.mimeType });
+  const filename = basename(options.filename);
+  const blob = await openAsBlob(options.filePath, { type: options.mimeType });
+  // Immich derives the asset type from the multipart file part's own filename. oazapfts appends a
+  // bare Blob without a filename, which the runtime labels "blob" and Immich rejects with
+  // "Unsupported file type blob", so the part must be a File carrying the real name.
+  const assetData = new File([blob as unknown as BlobPart], filename, { type: options.mimeType });
   const result = await uploadAsset({
     xImmichChecksum: checksum,
     assetMediaCreateDto: {
       assetData,
-      filename: basename(options.filename),
+      filename,
       fileCreatedAt: options.fileCreatedAt,
       fileModifiedAt: options.fileModifiedAt,
       isFavorite: options.isFavorite,

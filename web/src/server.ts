@@ -213,7 +213,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, pat
     if (!upstream.ok || !upstream.body) throw new HttpError(upstream.status || 502, 'Unable to retrieve Immich thumbnail');
     response.writeHead(200, {
       'content-type': upstream.headers.get('content-type') ?? 'image/jpeg',
-      'cache-control': 'private, no-store',
+      'cache-control': 'private, max-age=300',
       'x-content-type-options': 'nosniff',
     });
     await pipeline(Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream<Uint8Array>), response);

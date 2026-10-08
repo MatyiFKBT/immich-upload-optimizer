@@ -131,9 +131,9 @@ Set `IMMICH_URL` to the server root, for example `http://immich-server:2283` (a 
 
 The Immich API key needs `asset.read`, `asset.download`, `asset.upload`, `album.read`, `albumAsset.create`, and `tag.asset`; add `asset.delete` only if you enable original deletion. The UI uses HTTP Basic authentication with username `optimizer` and the password from `WEB_PASSWORD`/`WEB_PASSWORD_FILE`. The service binds to port 3000 inside the container; this Compose example publishes it only on localhost. Use a trusted network or HTTPS reverse proxy for remote access. HTTP Basic authentication does not encrypt credentials.
 
-The UI searches still images by capture date and/or album. It accepts JPEG, HEIC, and HEIF; paired Live Photo video IDs are preserved and verified. Multiple profiles are compared one image at a time; one selected profile creates a batch review with an explicit apply step. Candidates that are not strictly smaller cannot be uploaded. Original deletion is off by default and happens only after the new asset, tags, and album memberships are verified.
+The UI searches still images by capture date and/or album. It accepts JPEG, HEIC, and HEIF; paired Live Photo video IDs are preserved and verified. Selecting multiple profiles optimizes every selected image up front, three at a time, and then presents each image's candidates for an individual decision, highlighting the smallest eligible one. Selecting one profile creates a batch review with an explicit apply step. Candidates that are not strictly smaller cannot be uploaded. Original deletion is off by default and happens only after the new asset, tags, and album memberships are verified.
 
-Each run is limited to 100 images, and individual source files over 1 GiB are skipped. A one-profile batch stages eligible candidates under `/data` until you apply or skip them, so provide enough free space. Temporary candidates are cleared on container restart; prepared originals are never changed.
+Each run is limited to 100 images, and individual source files over 1 GiB are skipped. Every mode stages one candidate per selected profile for every selected image under `/data` until you decide on or apply them, so provide enough free space. Temporary candidates are cleared on container restart; prepared originals are never changed.
 
 
 ## 🚩 Flags

@@ -14,7 +14,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
   - JPEG → lossy JXL using the existing lossy JXL profile settings.
   - JPEG → lossless JXL using the existing lossless JXL profile settings.
   - HEIC/HEIF → AVIF or JXL using ImageMagick.
-- If multiple profiles are selected, process one image at a time and let the user choose one candidate or skip it before proceeding.
+- If multiple profiles are selected, optimize every selected image up front (three concurrently) and then let the user choose one candidate or skip each image independently, with the smallest eligible candidate highlighted.
 - If one profile is selected, process the selected assets as a batch, present a result table, and require an explicit batch apply action.
 - Only upload a candidate whose byte size is strictly less than the original.
 - A batch-level delete-original option defaults off. When enabled, delete an original only after the replacement upload, tag/album assignment, and verification all succeed.
@@ -34,7 +34,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 1. Create this plan and `WEB_OPTIMIZER_PROGRESS.json` with implementation states.
 2. Add the Node/TypeScript web service, server-side SDK client, configuration/secrets loading, authentication, and safe same-origin API routes.
 3. Implement Immich album/date search, paginated asset selection, metadata retrieval, and thumbnail access needed by the UI.
-4. Implement the fixed optimization profiles, one-image-at-a-time processing, candidate size comparison, and temporary-file cleanup.
+4. Implement the fixed optimization profiles, bounded-concurrency processing, candidate size comparison, and temporary-file cleanup.
 5. Implement the upload → copy tags/albums → verify → optional delete transaction. Fail closed: never delete the original on an upload, metadata, verification, or communication error.
 6. Implement the minimal UI for search, image selection, profile selection, per-image comparison or single-profile batch review, progress, and explicit apply/skip actions.
 7. Add the web Docker target and deployment documentation without building the image.
@@ -53,7 +53,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 
 - A user can connect to an existing Immich instance, search by date/album, select supported assets, and see originals and candidate sizes.
 - All selected profiles use the established toolchain and their intended conversion settings.
-- Multi-profile comparison is one asset at a time; a single profile supports batch processing and explicit batch application.
+- Multi-profile runs optimize every selected asset up front (three concurrently) and then accept independent per-asset decisions with the smallest candidate highlighted; a single profile supports batch processing and explicit batch application.
 - Only smaller candidates are uploaded.
 - Replacement tags and album memberships are copied and verified before any optional original deletion.
 - The existing proxy image/target remains usable with its previous default behavior.

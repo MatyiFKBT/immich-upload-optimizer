@@ -16,8 +16,9 @@ import {
 import { compatibleProfiles, generateCandidates, PROFILES, type Candidate, type ProfileId } from './optimizer.js';
 
 const MAX_BATCH_ASSETS = 100;
+const MAX_PARALLEL_ITEMS = 3;
 const BATCH_TTL_MS = 24 * 60 * 60 * 1000;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type BatchMode = 'compare' | 'batch';
 type BatchStatus = 'preparing' | 'awaiting-choice' | 'review' | 'applying' | 'complete' | 'failed' | 'expired';
@@ -213,11 +214,16 @@ async function failBatch(batch: Batch, error: unknown): Promise<void> {
   }
 }
 
-async function runCompare(batch: Batch): Promise<void> {
-  try {
-    batch.status = 'preparing';
-    while (batch.currentIndex < batch.items.length) {
-      const item = batch.items[batch.currentIndex]!;
+async function prepareItems(batch: Batch): Promise<void> {
+  let next = 0;
+  let completed = 0;
+  const workerCount = Math.min(MAX_PARALLEL_ITEMS, batch.items.length);
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      const item = batch.items[index];
+      if (!item) return;
       try {
         await prepareItem(batch, item);
         const eligible = item.candidates.some((candidate) => candidate.eligible && candidate.path !== null);
@@ -227,20 +233,31 @@ async function runCompare(batch: Batch): Promise<void> {
             item.message = item.candidates.length ? 'No candidate is smaller than the original' : 'No usable candidate was generated';
           }
           await cleanupItem(item);
-          batch.currentIndex += 1;
-          continue;
+        } else {
+          item.status = 'awaiting-choice';
         }
-        item.status = 'awaiting-choice';
-        batch.status = 'awaiting-choice';
-        return;
       } catch (error) {
         item.status = 'failed';
         item.message = error instanceof Error ? error.message : 'Unable to optimize this image';
         await cleanupItem(item);
-        batch.currentIndex += 1;
       }
+      completed += 1;
+      batch.currentIndex = completed;
     }
-    await finishBatch(batch);
+  };
+  await Promise.all(Array.from({ length: workerCount }, worker));
+}
+
+async function runCompare(batch: Batch): Promise<void> {
+  try {
+    batch.status = 'preparing';
+    await prepareItems(batch);
+    batch.currentIndex = batch.items.length;
+    if (batch.items.some((item) => item.status === 'awaiting-choice')) {
+      batch.status = 'awaiting-choice';
+    } else {
+      await finishBatch(batch);
+    }
   } catch (error) {
     await failBatch(batch, error);
   }
@@ -249,24 +266,16 @@ async function runCompare(batch: Batch): Promise<void> {
 async function runBatchPreview(batch: Batch): Promise<void> {
   try {
     batch.status = 'preparing';
-    for (let index = 0; index < batch.items.length; index += 1) {
-      batch.currentIndex = index;
-      const item = batch.items[index]!;
-      try {
-        await prepareItem(batch, item);
-        if (item.status === 'skipped') continue;
-        const candidate = item.candidates[0];
-        if (!candidate?.eligible || !candidate.path) {
-          item.status = 'skipped';
-          item.message = candidate?.error ?? 'No smaller candidate was generated';
-          await cleanupItem(item);
-        } else {
-          item.status = 'ready';
-        }
-      } catch (error) {
-        item.status = 'failed';
-        item.message = error instanceof Error ? error.message : 'Unable to optimize this image';
+    await prepareItems(batch);
+    for (const item of batch.items) {
+      if (item.status !== 'awaiting-choice') continue;
+      const candidate = item.candidates[0];
+      if (!candidate?.eligible || !candidate.path) {
+        item.status = 'skipped';
+        item.message = candidate?.error ?? 'No smaller candidate was generated';
         await cleanupItem(item);
+      } else {
+        item.status = 'ready';
       }
     }
     batch.status = 'review';
@@ -325,6 +334,9 @@ export function getBatch(id: string): Record<string, unknown> | null {
     status: batch.status,
     currentIndex: batch.currentIndex,
     total: batch.items.length,
+    resolved: batch.items.filter((item) => ['replaced', 'skipped', 'failed'].includes(item.status)).length,
+    awaiting: batch.items.filter((item) => item.status === 'awaiting-choice').length,
+    busy: batch.items.some((item) => item.status === 'applying'),
     deleteOriginal: batch.deleteOriginal,
     error: batch.error,
     items: batch.items.map((item) => ({
@@ -350,18 +362,22 @@ export function getBatch(id: string): Record<string, unknown> | null {
 }
 
 
+async function settleCompareBatch(batch: Batch): Promise<void> {
+  const pending = batch.items.some((item) => item.status === 'awaiting-choice' || item.status === 'applying' || item.status === 'processing' || item.status === 'queued');
+  if (!pending) await finishBatch(batch);
+}
+
 export function advanceCompareBatch(batchId: string, assetId: string, profileId: unknown): void {
   const batch = batches.get(batchId);
   if (!batch || batch.mode !== 'compare' || batch.status !== 'awaiting-choice') throw new BatchRequestError(409, 'Batch is not waiting for an image decision');
-  const item = batch.items[batch.currentIndex];
-  if (!item || item.assetId !== assetId || item.status !== 'awaiting-choice') throw new BatchRequestError(409, 'Asset is not the current comparison item');
+  const item = batch.items.find((value) => value.assetId === assetId);
+  if (!item || item.status !== 'awaiting-choice') throw new BatchRequestError(409, 'Asset is not waiting for a decision');
   if (profileId !== null && !isProfileId(profileId)) throw new BatchRequestError(400, 'Unknown optimization profile');
   const candidate = profileId === null ? null : item.candidates.find((value) => value.profileId === profileId && value.eligible && value.path);
   if (profileId !== null && !candidate) throw new BatchRequestError(409, 'Selected profile has no smaller candidate');
 
   item.status = candidate ? 'applying' : 'skipped';
   if (!candidate) item.message = 'Skipped by user; original kept';
-  batch.status = 'applying';
   void (async () => {
     if (candidate) {
       try {
@@ -372,8 +388,7 @@ export function advanceCompareBatch(batchId: string, assetId: string, profileId:
       }
     }
     await cleanupItem(item);
-    batch.currentIndex += 1;
-    await runCompare(batch);
+    await settleCompareBatch(batch);
   })().catch(async (error: unknown) => {
     try {
       await failBatch(batch, error);

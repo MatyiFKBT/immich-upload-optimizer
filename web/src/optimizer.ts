@@ -88,7 +88,7 @@ async function executeProfile(profile: typeof PROFILES[number], sourcePath: stri
     case 'jpeg-jpeg':
       await runProcess('caesiumclt', [
         '--quality', '82', '--exif', '--keep-orientation', '--keep-dates', '--threads', '1',
-        '--output', outputDir, '--format', 'jpeg', sourcePath,
+        '--output', outputDir, sourcePath,
       ]);
       break;
     case 'jpeg-avif':
