@@ -46,13 +46,14 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 
 - Add a Hono/Node backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
 - Build the UI as a React SPA bundled by Vite; React reconciliation keeps asset thumbnails attached to stable element keys, so polling never re-creates or re-requests them.
-- Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a two-tab shell (Compress, Monthly cleanup) with the shared Immich client in `web/client/src/api.ts`.
-- Monthly cleanup writes through narrow endpoints (`/api/library/trash`, `/api/library/archive`) and reuses the compression batch pipeline rather than adding a second write path.
+- Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a three-tab shell (Compress, Monthly cleanup, Live photos) with the shared Immich client in `web/client/src/api.ts`.
+- Library writes go through one narrow surface: `POST/GET/DELETE /api/library/jobs` enqueues, lists and cancels jobs, and a server-side FIFO queue runs them one at a time. Compression jobs reuse the existing batch pipeline rather than adding a second write path.
 - Pin `@immich/sdk` to `3.3.0-rc.0`, matching `immich-openapi-specs.json`; use its stable nested date/album/type filter and cursor pagination rather than deprecated flat search fields.
 - The backend owns temporary downloads and candidate files and invokes only fixed, built-in optimizer profiles. Do not execute user-supplied commands or construct shell command strings from request data.
 - Configure the Immich URL and API key using Docker environment variables or secret files. Require a separate web UI password because this service can mutate and delete assets. Document that it must be exposed only on a trusted network or through HTTPS.
 - Extend the existing multi-stage Docker build with a web target sharing the current codec/tool runtime. Preserve the existing proxy target and its default behavior.
 - Serve the minimal UI and API from the same web service/origin. Add deployment instructions and required environment variables.
+- Publish the web image from CI on every push to `web-ui` as its own GHCR package (`<repo>-web`), tagged `latest` and the full commit hash, so it never collides with the GoReleaser-owned proxy package.
 
 ## Implementation steps
 
@@ -64,10 +65,15 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 6. Implement the minimal UI for search, image selection, profile selection, per-image comparison or single-profile batch review, progress, and explicit apply/skip actions.
 7. Add the web Docker target and deployment documentation without building the image.
 8. Do not run builds, tests, or smoke checks here; the user will validate the web app and container in their environment.
-9. Add the monthly library endpoints: per-month capture counts, a full-month asset listing, trash, and archive, all validated and rate-limited per request.
-10. Add the two-tab shell and convert both tabs to Tailwind CSS v4 with shadcn/ui components.
+9. Add the monthly library endpoints: per-month capture counts, a full-month asset listing, and the job endpoints that enqueue, list and cancel library jobs, all validated per request.
+10. Add the tab shell and convert every tab to Tailwind CSS v4 with shadcn/ui components.
 11. Add the monthly cleanup flow: year grid, month view with same-minute burst groups, keep/trash marking, per-group and per-asset actions with confirmation, and the compression-profile selector.
-12. Add the live photo tab: list stills with a linked motion video and unlink the video, trashing it alone through the job queue.
+12. Add the live photo tab: list stills with a linked motion video and unlink the video, trashing it alone through the job queue, with the optional compress-afterwards pass.
+13. Order the month oldest first and interleave burst groups with single images.
+14. Replace the single active-run slot with a non-blocking FIFO job queue that waits for the optimizer slot instead of failing.
+15. Tag compressed replacements `optimized` and surface that in the month view.
+16. Add the GitHub Actions workflow that builds and publishes the web image to GHCR.
+17. Harden the destructive paths: validate motion links before acting on them, verify a replacement is readable back at the uploaded size before removing any original, and report an interrupted run as still applying instead of failed.
 
 ## Safety invariants
 
@@ -92,4 +98,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - The monthly tab shows per-month capture counts for a year and loads a selected month as thumbnails only.
 - Assets captured in the same minute are grouped, keep/trash marks drive the per-group actions, and ungrouped assets expose compress, trash, and archive per asset.
 - Trash uses the non-forced delete so it stays restorable in Immich, and every action is confirmed before it runs.
-- The live-photo tab lists stills with a paired motion video and can drop the video alone, leaving the image, its metadata and its album memberships intact.
+- The live-photo tab lists stills with a paired motion video and can drop the video alone, leaving the image, its metadata and its album memberships intact, and supports click, shift-click, drag-box, Cmd/Ctrl+A and Esc selection.
+- Library actions are queued and run one after another, so a user can start many without waiting for any one to finish, and a queued job can be cancelled.
+- A replacement carries the `optimized` tag and the month view marks assets that already have it.
+- A push to `web-ui` publishes a pullable web image to GHCR tagged with the commit hash.

@@ -1,9 +1,9 @@
 {
   "project": "Immich Web Media Optimizer",
-  "overall_progress_percent": 93,
-  "completed_steps": 14,
-  "total_steps": 15,
-  "updated_at": "2026-10-08",
+  "overall_progress_percent": 94,
+  "completed_steps": 16,
+  "total_steps": 17,
+  "updated_at": "2026-10-09",
   "steps": [
     {
       "id": "plan-and-tracker",
@@ -101,14 +101,28 @@
       "title": "Live photo tab: unlink and trash paired motion videos",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "New tab lists stills that still reference a motion video (SearchFilter.isMotion, guarded by livePhotoVideoId) with load-more paging. Unlinking uses PUT /assets/{id} with livePhotoVideoId null and only trashes the video after Immich confirms the link is gone. An optional flag then compresses each unlinked still with bestProfileFor (AVIF per source family), grouped per profile and run through the existing batch pipeline once the videos are gone. Motion links are validated (different id, untrashed video asset) before anything is unlinked or trashed, replacements must be readable back with the exact uploaded size before an original is removed, and an interrupted compression is reported as still applying rather than failed."
+      "notes": "New tab lists stills that still reference a motion video (SearchFilter.isMotion, guarded by livePhotoVideoId) with load-more paging. Unlinking uses PUT /assets/{id} with livePhotoVideoId null and only trashes the video after Immich confirms the link is gone. An optional flag then compresses each unlinked still with bestProfileFor (AVIF per source family), grouped per profile and run through the existing batch pipeline once the videos are gone. Motion links are validated (different id, untrashed video asset) before anything is unlinked or trashed, replacements must be readable back with the exact uploaded size before an original is removed, and an interrupted compression is reported as still applying rather than failed. Selection supports click, shift-click ranges, drag-box marquee, Cmd/Ctrl+A and Esc, and photos with a queued job are excluded from every selection path."
+    },
+    {
+      "id": "ci-publish",
+      "title": "Publish the web image from GitHub Actions",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "Every push to web-ui builds the web target and pushes it to GHCR as <repo>-web, tagged latest and the full commit hash, with a gha layer cache and cancel-in-progress concurrency. actionlint clean; two runs on web-ui completed successfully and ghcr.io/matyifkbt/immich-upload-optimizer-web:latest resolves anonymously as a single-platform OCI manifest."
+    },
+    {
+      "id": "safety-hardening",
+      "title": "Harden the destructive paths after a partial-failure report",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "Motion links are validated (different id, untrashed video) before unlinking or trashing, a replacement must be readable back from Immich with exactly the uploaded byte count before any original is removed, and a compression run that is still applying is reported as such instead of failed. Note the upstream release.yaml still pins action versions whose runners GitHub has removed."
     },
     {
       "id": "verification",
       "title": "User runs build, tests, and deployment verification",
       "status": "pending_user",
       "progress_percent": 10,
-      "notes": "Hono server and Vite SPA typecheck and build cleanly. No runtime smoke test or Docker image build was performed; remaining validation is left to the user as requested."
+      "notes": "Hono server and Vite SPA typecheck and build cleanly; the workflow passes actionlint. No runtime smoke test, no Docker image build and no live-Immich verification was performed by the assistant; that validation is the user's."
     }
   ]
 }
