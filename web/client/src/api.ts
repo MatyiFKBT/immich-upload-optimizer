@@ -39,6 +39,8 @@ export const api = {
     }),
   apply: (batchId: string, assetIds: string[]) =>
     request<{ accepted: boolean }>(`/api/batches/${encodeURIComponent(batchId)}/apply`, { method: 'POST', body: { assetIds } }),
+  abandon: (batchId: string) =>
+    request<{ accepted: boolean }>(`/api/batches/${encodeURIComponent(batchId)}/abandon`, { method: 'POST', body: {} }),
   monthCounts: (year: number) => request<MonthCounts>(`/api/library/months/${year}`),
   monthAssets: (year: number, month: number) => request<MonthAssets>(`/api/library/months/${year}/${month}`),
   trash: (assetIds: string[]) => request<{ accepted: number }>('/api/library/trash', { method: 'POST', body: { assetIds } }),

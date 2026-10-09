@@ -4,6 +4,7 @@ import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionCo
 import { MonthView } from '@/components/monthly/MonthView';
 import { YearOverview } from '@/components/monthly/YearOverview';
 import { toast } from '@/components/ui/toaster';
+import { clearConfirmations, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { useMonthAssets, useMonthCounts } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
 import { compressAndDeleteOriginals } from '@/lib/compress';
@@ -12,6 +13,8 @@ import type { ActionKind, ProfileOption } from '@/types';
 interface Props {
   profiles: ProfileOption[];
 }
+
+const ACTION_KINDS: readonly ActionKind[] = ['compress', 'trash', 'archive'];
 
 const ACTION_COPY: Record<ActionKind, { title: (what: string) => string; description: string; confirmLabel: string }> = {
   compress: {
@@ -39,6 +42,7 @@ export function MonthlyTab({ profiles }: Props) {
   const [profileId, setProfileId] = useState('');
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [busy, setBusy] = useState(false);
+  const [promptsHidden, setPromptsHidden] = useState(() => ACTION_KINDS.some((kind) => isConfirmationHidden(kind)));
 
   const { counts, loading: countsLoading, error: countsError } = useMonthCounts(year);
   const { assets, truncated, loading, error, remove } = useMonthAssets(year, month);
@@ -58,27 +62,18 @@ export function MonthlyTab({ profiles }: Props) {
     });
   };
 
-  const requestAction = (kind: ActionKind, assetIds: string[]) => {
-    if (assetIds.length === 0) return;
-    const what = assetIds.length === 1 ? 'this asset' : `${assetIds.length} assets`;
-    setPending({ kind, assetIds, title: ACTION_COPY[kind].title(what), description: ACTION_COPY[kind].description, confirmLabel: ACTION_COPY[kind].confirmLabel });
-  };
-
-  const executePending = async () => {
-    const action = pending;
-    if (!action) return;
-    setPending(null);
+  const runAction = async (kind: ActionKind, assetIds: string[]) => {
     setBusy(true);
     try {
-      let resolvedIds = action.assetIds;
-      if (action.kind === 'trash') {
-        const result = await api.trash(action.assetIds);
+      let resolvedIds = assetIds;
+      if (kind === 'trash') {
+        const result = await api.trash(assetIds);
         toast.success(`Moved ${result.accepted} asset(s) to the trash`);
-      } else if (action.kind === 'archive') {
-        const result = await api.archive(action.assetIds);
+      } else if (kind === 'archive') {
+        const result = await api.archive(assetIds);
         toast.success(`Archived ${result.accepted} asset(s)`);
       } else {
-        const outcome = await compressAndDeleteOriginals(action.assetIds, activeProfileId);
+        const outcome = await compressAndDeleteOriginals(assetIds, activeProfileId);
         resolvedIds = outcome.resolvedIds;
         if (outcome.replaced > 0) toast.success(`Replaced ${outcome.replaced} asset(s) with smaller versions`);
         if (outcome.skipped > 0) toast.info(`Left ${outcome.skipped} asset(s) unchanged: no strictly smaller candidate`);
@@ -95,6 +90,34 @@ export function MonthlyTab({ profiles }: Props) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const requestAction = (kind: ActionKind, assetIds: string[]) => {
+    if (assetIds.length === 0) return;
+    if (isConfirmationHidden(kind)) {
+      void runAction(kind, assetIds);
+      return;
+    }
+    const what = assetIds.length === 1 ? 'this asset' : `${assetIds.length} assets`;
+    setPending({ kind, assetIds, title: ACTION_COPY[kind].title(what), description: ACTION_COPY[kind].description, confirmLabel: ACTION_COPY[kind].confirmLabel });
+  };
+
+  const confirmPending = (remember: boolean) => {
+    const action = pending;
+    if (!action) return;
+    setPending(null);
+    if (remember) {
+      setConfirmationHidden(action.kind, true);
+      setPromptsHidden(true);
+      toast.info(`No longer asking before ${action.kind} actions. Use “Re-enable prompts” to bring them back.`);
+    }
+    void runAction(action.kind, action.assetIds);
+  };
+
+  const resetPrompts = () => {
+    clearConfirmations(ACTION_KINDS);
+    setPromptsHidden(false);
+    toast.info('Confirmation prompts are back on for every action.');
   };
 
   return (
@@ -120,14 +143,16 @@ export function MonthlyTab({ profiles }: Props) {
           profiles={profiles}
           profileId={activeProfileId}
           busy={busy}
+          promptsHidden={promptsHidden}
           onBack={() => setMonth(null)}
           onMark={toggleMark}
           onProfileChange={setProfileId}
           onAction={requestAction}
+          onResetPrompts={resetPrompts}
         />
       )}
 
-      <ActionConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={() => void executePending()} />
+      <ActionConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={confirmPending} />
     </>
   );
 }

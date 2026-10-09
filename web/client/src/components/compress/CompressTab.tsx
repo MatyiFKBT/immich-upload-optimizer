@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type AssetItem, type Batch, type SearchFilters } from '@/api';
+import { BATCH_ID_KEY, rememberBatchId } from '@/lib/storage';
 import type { Album, ProfileOption } from '@/types';
 import { BatchPanel } from './BatchPanel';
 import { ProfilesPanel } from './ProfilesPanel';
 import { SearchPanel } from './SearchPanel';
 
 const POLL_INTERVAL_MS = 1100;
-const BATCH_ID_STORAGE_KEY = 'immichOptimizerBatchId';
 
 interface Props {
   albums: Album[];
@@ -30,7 +30,7 @@ export function CompressTab({ albums, profiles }: Props) {
   const [runMessage, setRunMessage] = useState('');
   const [runFailed, setRunFailed] = useState(false);
 
-  const [batchId, setBatchId] = useState<string | null>(() => localStorage.getItem(BATCH_ID_STORAGE_KEY));
+  const [batchId, setBatchId] = useState<string | null>(() => localStorage.getItem(BATCH_ID_KEY));
   const [batch, setBatch] = useState<Batch | null>(null);
   const [batchMessage, setBatchMessage] = useState('');
   const [applySelection, setApplySelection] = useState<ReadonlySet<string>>(() => new Set());
@@ -157,7 +157,7 @@ export function CompressTab({ albums, profiles }: Props) {
     setRunMessage('Creating optimization run…');
     try {
       const created = await api.createBatch({ assetIds, profileIds, deleteOriginal: deleteOriginals });
-      localStorage.setItem(BATCH_ID_STORAGE_KEY, created.id);
+      rememberBatchId(created.id);
       setBatchId(created.id);
       setBatch(await api.batch(created.id));
       setRunMessage('Run created. Original assets remain safe until each replacement is verified.');
@@ -195,6 +195,17 @@ export function CompressTab({ albums, profiles }: Props) {
       setBatchMessage('');
     } catch (error) {
       setBatchMessage(error instanceof Error ? error.message : 'Unable to apply the selected replacements');
+    }
+  };
+
+  const abandonRun = async () => {
+    if (!batchId) return;
+    try {
+      await api.abandon(batchId);
+      setBatch(await api.batch(batchId));
+      setBatchMessage('');
+    } catch (error) {
+      setBatchMessage(error instanceof Error ? error.message : 'Unable to discard the run');
     }
   };
 
@@ -244,6 +255,7 @@ export function CompressTab({ albums, profiles }: Props) {
         onDecide={decide}
         onToggleApplyItem={toggleApplyItem}
         onApply={applySelected}
+        onAbandon={() => void abandonRun()}
       />
     </div>
   );

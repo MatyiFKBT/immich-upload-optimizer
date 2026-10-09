@@ -14,6 +14,7 @@ const STATUS_LABEL: Record<BatchStatus, string> = {
   complete: 'Complete',
   failed: 'Stopped',
   expired: 'Expired',
+  abandoned: 'Discarded',
 };
 
 interface Props {
@@ -23,10 +24,13 @@ interface Props {
   onDecide: (assetId: string, profileId: string | null) => void;
   onToggleApplyItem: (assetId: string, checked: boolean) => void;
   onApply: () => void;
+  onAbandon: () => void;
 }
 
-export function BatchPanel({ batch, message, applySelection, onDecide, onToggleApplyItem, onApply }: Props) {
+export function BatchPanel({ batch, message, applySelection, onDecide, onToggleApplyItem, onApply, onAbandon }: Props) {
   if (!batch) return null;
+
+  const discardable = batch.status === 'review' || batch.status === 'awaiting-choice';
 
   const progress =
     batch.mode === 'compare'
@@ -80,6 +84,11 @@ export function BatchPanel({ batch, message, applySelection, onDecide, onToggleA
           {progress} · originals {batch.deleteOriginal ? 'will be deleted only after verification' : 'will be kept'}
         </p>
         {content}
+        {discardable ? (
+          <Button variant="outline" size="sm" onClick={onAbandon}>
+            Discard this run
+          </Button>
+        ) : null}
         {batch.error || message ? <p className="text-sm text-destructive">{batch.error ?? message}</p> : null}
       </CardContent>
     </Card>

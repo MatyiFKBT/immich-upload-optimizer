@@ -22,10 +22,12 @@ interface Props {
   profiles: ProfileOption[];
   profileId: string;
   busy: boolean;
+  promptsHidden: boolean;
   onBack: () => void;
   onMark: (assetId: string, mark: Mark) => void;
   onProfileChange: (profileId: string) => void;
   onAction: (kind: ActionKind, assetIds: string[]) => void;
+  onResetPrompts: () => void;
 }
 
 export function MonthView({
@@ -39,10 +41,12 @@ export function MonthView({
   profiles,
   profileId,
   busy,
+  promptsHidden,
   onBack,
   onMark,
   onProfileChange,
   onAction,
+  onResetPrompts,
 }: Props) {
   const { groups, rest } = splitBursts(assets);
   const totalSize = assets.reduce((sum, asset) => sum + (asset.size ?? 0), 0);
@@ -68,6 +72,11 @@ export function MonthView({
           </div>
           <div className="flex items-center gap-2">
             {busy ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
+            {promptsHidden ? (
+              <Button variant="ghost" size="sm" onClick={onResetPrompts}>
+                Re-enable prompts
+              </Button>
+            ) : null}
             <span className="text-sm text-muted-foreground">Compression profile</span>
             <Select value={profileId} onValueChange={onProfileChange}>
               <SelectTrigger className="w-56">

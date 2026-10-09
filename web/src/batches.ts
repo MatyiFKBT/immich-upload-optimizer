@@ -21,7 +21,7 @@ const BATCH_TTL_MS = 24 * 60 * 60 * 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type BatchMode = 'compare' | 'batch';
-type BatchStatus = 'preparing' | 'awaiting-choice' | 'review' | 'applying' | 'complete' | 'failed' | 'expired';
+type BatchStatus = 'preparing' | 'awaiting-choice' | 'review' | 'applying' | 'complete' | 'failed' | 'expired' | 'abandoned';
 type ItemStatus = 'queued' | 'processing' | 'awaiting-choice' | 'ready' | 'applying' | 'replaced' | 'skipped' | 'failed';
 export class BatchRequestError extends Error {
   constructor(readonly statusCode: number, message: string) {
@@ -123,7 +123,7 @@ export async function createBatch(options: {
   if (activeBatchId) {
     const active = batches.get(activeBatchId);
     if (active && !['complete', 'failed', 'expired'].includes(active.status)) {
-      throw new BatchRequestError(409, 'Finish or abandon the current batch before starting another');
+      throw new BatchRequestError(409, 'Another run is still open. Apply or discard it in the Compress tab, then try again.');
     }
     activeBatchId = null;
   }
@@ -278,8 +278,14 @@ async function runBatchPreview(batch: Batch): Promise<void> {
         item.status = 'ready';
       }
     }
-    batch.status = 'review';
-    batch.currentIndex = batch.items.length;
+    // A run where nothing produced a smaller candidate has nothing to review; finishing here keeps it
+    // from holding the single active-run slot forever.
+    if (batch.items.some((item) => item.status === 'ready')) {
+      batch.status = 'review';
+      batch.currentIndex = batch.items.length;
+    } else {
+      await finishBatch(batch);
+    }
   } catch (error) {
     await failBatch(batch, error);
   }
@@ -445,6 +451,31 @@ export function applyBatchResults(batchId: string, assetIds: unknown): void {
       activeBatchId = null;
     }
   });
+}
+
+/** Releases the single active-run slot for a prepared run the user no longer wants. */
+export async function abandonBatch(id: string): Promise<void> {
+  const batch = batches.get(id);
+  if (!batch) throw new BatchRequestError(404, 'Batch not found or expired');
+  if (batch.status === 'preparing' || batch.status === 'applying') {
+    throw new BatchRequestError(409, 'This run is still working; wait for it to finish before discarding it');
+  }
+  if (['complete', 'failed', 'expired', 'abandoned'].includes(batch.status)) return;
+
+  for (const item of batch.items) {
+    if (['queued', 'processing', 'ready', 'awaiting-choice'].includes(item.status)) {
+      item.status = 'skipped';
+      item.message = 'Run discarded; original kept';
+    }
+  }
+  batch.status = 'abandoned';
+  batch.currentIndex = batch.items.length;
+  activeBatchId = null;
+  await rm(batch.workDir, { recursive: true, force: true });
+  for (const item of batch.items) {
+    item.workDir = null;
+    for (const candidate of item.candidates) candidate.path = null;
+  }
 }
 
 export function validateAssetId(id: string): boolean {

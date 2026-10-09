@@ -29,6 +29,8 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Ungrouped assets each get three per-asset buttons: compress and delete original, trash, archive.
 - A compression-profile selector in the month toolbar chooses the profile used by every compress action in that tab.
 - Trash uses `DELETE /assets` with `force: false` (reversible Immich trash), archive uses `PUT /assets` with `visibility: "archive"`.
+- Every confirmation offers a "don't ask again" checkbox stored per action kind in local storage, with a *Re-enable prompts* control in the month toolbar.
+- A prepared run that produced nothing eligible finishes itself instead of holding the single active-run slot, and any prepared run can be discarded (`POST /api/batches/:id/abandon`); the monthly compression flow abandons its own run when it cannot complete.
 
 ## Architecture and deployment
 

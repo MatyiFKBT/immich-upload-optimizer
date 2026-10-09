@@ -9,7 +9,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { loadConfig, type AppConfig } from './config.js';
-import { advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
+import { abandonBatch, advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
 import { archiveAssets, configureImmich, getMonthCounts, listAlbums, listMonthAssets, searchImages, streamThumbnail, trashAssets, type ThumbnailSize } from './immich.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
 
@@ -207,6 +207,11 @@ export function createApp(config: AppConfig): Hono {
   app.post('/api/batches/:batchId/apply', async (context) => {
     const body = await readJson(context);
     applyBatchResults(context.req.param('batchId'), body.assetIds);
+    return jsonResponse(context, 202, { accepted: true });
+  });
+
+  app.post('/api/batches/:batchId/abandon', async (context) => {
+    await abandonBatch(context.req.param('batchId'));
     return jsonResponse(context, 202, { accepted: true });
   });
 
