@@ -141,6 +141,8 @@ Actions are queued rather than blocking: you can keep reviewing and queue as man
 
 Compressed replacements are tagged `optimized` in Immich (created on first use, verified alongside the copied tags before the original is deleted), and the month view marks any asset carrying that tag, so you can see what has already been optimized.
 
+**Live photos** lists every still image that still carries a paired motion video (iPhone Live Photos, Samsung Motion Photos). Select any of them and *Unlink and trash* detaches the video from the still and moves the video alone to the Immich trash: the photo keeps its date, albums, tags and place in the library, and the image file itself is never modified. The video is only trashed once Immich confirms the link is gone, so a still can never be left pointing at a trashed video. This runs through the same job queue.
+
 Each run is limited to 100 images, and individual source files over 1 GiB are skipped. Every mode stages one candidate per selected profile for every selected image under `/data` until you decide on or apply them, so provide enough free space. Temporary candidates are cleared on container restart; prepared originals are never changed. A month in the cleanup tab is capped at 3000 assets and says so when it truncates. The job queue lives in memory: restarting the container drops queued jobs (a job that was mid-run leaves its original untouched unless its replacement had already been verified).
 
 ### Local development

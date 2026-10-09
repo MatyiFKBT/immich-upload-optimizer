@@ -10,7 +10,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { loadConfig, type AppConfig } from './config.js';
 import { abandonBatch, advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
-import { configureImmich, getMonthCounts, listAlbums, listMonthAssets, listOptimizedAssetIds, searchImages, streamThumbnail, type ThumbnailSize } from './immich.js';
+import { configureImmich, getMonthCounts, listAlbums, listMonthAssets, listMotionPhotos, listOptimizedAssetIds, searchImages, streamThumbnail, type ThumbnailSize } from './immich.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
 import { cancelJob, enqueueJob, initializeQueue, listJobs } from './queue.js';
 
@@ -257,12 +257,18 @@ export function createApp(config: AppConfig): Hono {
     });
   });
 
+  app.get('/api/library/motion', async (context) => {
+    const cursor = context.req.query('cursor');
+    if (cursor !== undefined && cursor.length > 2048) throw new HttpError(400, 'Invalid cursor');
+    return jsonResponse(context, 200, await listMotionPhotos(cursor || undefined));
+  });
+
   app.post('/api/library/jobs', async (context) => {
     const body = await readJson(context);
     const assetIds = assetIdList(body.assetIds);
     const kind = body.kind;
-    if (kind !== 'compress' && kind !== 'trash' && kind !== 'archive') {
-      throw new HttpError(400, 'kind must be compress, trash, or archive');
+    if (kind !== 'compress' && kind !== 'trash' && kind !== 'archive' && kind !== 'motion') {
+      throw new HttpError(400, 'kind must be compress, trash, archive, or motion');
     }
     let profileId: string | null = null;
     if (kind === 'compress') {

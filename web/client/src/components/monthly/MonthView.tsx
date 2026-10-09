@@ -91,7 +91,7 @@ export function MonthView({
               <SelectContent>
                 {profiles.map((profile) => (
                   <SelectItem key={profile.id} value={profile.id}>
-                    {profile.label}
+                    {profile.label} · {profile.sources.includes('jpeg') ? 'JPEG source' : 'HEIC / HEIF source'}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -122,6 +122,7 @@ export function MonthView({
                   group={{ key: block.key, items: block.items }}
                   marks={marks}
                   pending={pendingAssetIds}
+                  profileId={profileId}
                   busy={busy}
                   onMark={onMark}
                   onAction={onAction}
@@ -135,7 +136,7 @@ export function MonthView({
                       footer={
                         <AssetActions
                           disabled={busy || pendingAssetIds.has(asset.id)}
-                          compressible={asset.profiles.length > 0 && !asset.isVideo}
+                          compressible={!asset.isVideo && asset.profiles.some((profile) => profile.id === profileId)}
                           onCompress={() => onAction('compress', [asset.id])}
                           onTrash={() => onAction('trash', [asset.id])}
                           onArchive={() => onAction('archive', [asset.id])}

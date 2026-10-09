@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { applyBatchResults, createBatch, getBatch, BatchRequestError, type BatchView } from './batches.js';
-import { archiveAssets, trashAssets } from './immich.js';
+import { archiveAssets, getAssetSnapshot, trashAssets, unlinkMotionVideo } from './immich.js';
 
-export type JobKind = 'compress' | 'trash' | 'archive';
+export type JobKind = 'compress' | 'trash' | 'archive' | 'motion';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
 
 export interface JobView {
@@ -125,7 +125,50 @@ async function executeJob(job: JobView): Promise<void> {
     job.message = `Archived ${job.assetIds.length} asset(s)`;
     return;
   }
+  if (job.kind === 'motion') {
+    await runUnlinkMotion(job);
+    return;
+  }
   await runCompression(job);
+}
+
+/**
+ * Detaches and trashes the motion video behind each still. The video is only trashed after Immich
+ * confirms the link is gone, so a still never ends up pointing at a trashed video.
+ */
+async function runUnlinkMotion(job: JobView): Promise<void> {
+  const resolved: string[] = [];
+  const failures: string[] = [];
+  let unlinked = 0;
+  let skipped = 0;
+
+  for (const assetId of job.assetIds) {
+    let label = assetId;
+    try {
+      const asset = await getAssetSnapshot(assetId);
+      label = asset.originalFileName;
+      if (!asset.livePhotoVideoId) {
+        skipped += 1;
+        resolved.push(assetId);
+        continue;
+      }
+      const remaining = await unlinkMotionVideo(assetId);
+      if (remaining) throw new Error('Immich still reports the motion video as linked');
+      await trashAssets([asset.livePhotoVideoId]);
+      unlinked += 1;
+      resolved.push(assetId);
+    } catch (error) {
+      failures.push(`${label}: ${error instanceof Error ? error.message : 'failed'}`);
+    }
+  }
+
+  job.resolvedIds = resolved;
+  job.skipped = skipped;
+  job.failed = failures.length;
+  const parts = [`Unlinked and trashed ${unlinked} motion video(s)`];
+  if (skipped > 0) parts.push(`${skipped} had no linked video`);
+  if (failures.length > 0) parts.push(`${failures.length} failed`);
+  job.message = `${parts.join(', ')}${failures.length > 0 ? ` — ${failures.slice(0, 2).join(' · ')}` : ''}`;
 }
 
 /** Waits for the single optimizer slot instead of failing when the Compress tab holds it. */

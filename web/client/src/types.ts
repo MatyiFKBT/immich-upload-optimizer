@@ -86,6 +86,25 @@ export type AssetVisibility = 'archive' | 'timeline' | 'hidden' | 'locked';
 
 export type ActionKind = 'compress' | 'trash' | 'archive';
 
+export type JobKind = ActionKind | 'motion';
+
+/** Kinds that can be confirmed; `motion` belongs to the live-photo tab only. */
+export type ConfirmKind = JobKind;
+
+export interface MotionPhoto {
+  id: string;
+  originalFileName: string;
+  localDateTime: string;
+  size: number | null;
+  livePhotoVideoId: string;
+}
+
+export interface MotionPhotos {
+  items: MotionPhoto[];
+  nextCursor: string | null;
+  total: number;
+}
+
 export interface LibraryAsset {
   id: string;
   originalFileName: string;
@@ -100,7 +119,6 @@ export interface LibraryAsset {
   profiles: AssetProfile[];
 }
 
-export type JobKind = ActionKind;
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
 
 export interface Job {

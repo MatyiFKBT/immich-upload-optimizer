@@ -4,9 +4,9 @@ import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionCo
 import { JobQueuePanel } from '@/components/monthly/JobQueuePanel';
 import { MonthView } from '@/components/monthly/MonthView';
 import { YearOverview } from '@/components/monthly/YearOverview';
-import { toast } from '@/components/ui/toaster';
+import { toast } from '@/components/ui/sonner';
 import { useJobs } from '@/hooks/useJobs';
-import { clearConfirmations, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
+import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { useMonthAssets, useMonthCounts } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
 import type { ActionKind, Job, ProfileOption } from '@/types';
@@ -14,8 +14,6 @@ import type { ActionKind, Job, ProfileOption } from '@/types';
 interface Props {
   profiles: ProfileOption[];
 }
-
-const ACTION_KINDS: readonly ActionKind[] = ['compress', 'trash', 'archive'];
 
 const KIND_LABEL: Record<ActionKind, string> = {
   compress: 'Compress and delete original',
@@ -47,15 +45,18 @@ export function MonthlyTab({ profiles }: Props) {
   const [month, setMonth] = useState<number | null>(null);
   const [marks, setMarks] = useState<ReadonlyMap<string, Mark>>(() => new Map());
   const [profileId, setProfileId] = useState('');
-  const [pending, setPending] = useState<PendingAction | null>(null);
+  // This tab only ever queues its own three kinds; the intersection keeps that narrow for submitJob.
+  const [pending, setPending] = useState<(PendingAction & { kind: ActionKind }) | null>(null);
   const [busy, setBusy] = useState(false);
-  const [promptsHidden, setPromptsHidden] = useState(() => ACTION_KINDS.some((kind) => isConfirmationHidden(kind)));
+  const [promptsHidden, setPromptsHidden] = useState(() => CONFIRM_KINDS.some((kind) => isConfirmationHidden(kind)));
 
   const { counts, loading: countsLoading, error: countsError } = useMonthCounts(year);
   const { assets, truncated, loading, error, remove } = useMonthAssets(year, month);
 
   const handleSettled = useCallback(
     (job: Job) => {
+      const kind = job.kind;
+      if (kind === 'motion') return; // the live-photo tab owns its own jobs
       const affected = job.resolvedIds.length > 0 ? job.resolvedIds : job.assetIds;
       remove(affected);
       setMarks((previous) => {
@@ -64,11 +65,11 @@ export function MonthlyTab({ profiles }: Props) {
         return next;
       });
       if (job.status === 'failed') {
-        toast.error(`${KIND_LABEL[job.kind]} failed — ${job.message ?? 'unknown error'}`);
-      } else if (job.kind === 'compress' && job.replaced === 0) {
+        toast.error(`${KIND_LABEL[kind]} failed — ${job.message ?? 'unknown error'}`);
+      } else if (kind === 'compress' && job.replaced === 0) {
         toast.info(job.message ?? 'Nothing was replaced');
       } else {
-        toast.success(job.message ?? `${KIND_LABEL[job.kind]} finished`);
+        toast.success(job.message ?? `${KIND_LABEL[kind]} finished`);
       }
     },
     [remove],
@@ -150,7 +151,7 @@ export function MonthlyTab({ profiles }: Props) {
   };
 
   const resetPrompts = () => {
-    clearConfirmations(ACTION_KINDS);
+    clearConfirmations(CONFIRM_KINDS);
     setPromptsHidden(false);
     toast.info('Confirmation prompts are back on for every action.');
   };

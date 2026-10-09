@@ -9,6 +9,7 @@ const KIND_LABEL: Record<JobKind, string> = {
   compress: 'Compress and delete original',
   trash: 'Move to trash',
   archive: 'Archive',
+  motion: 'Unlink and trash motion video',
 };
 
 const STATUS_LABEL: Record<JobStatus, string> = {
@@ -57,7 +58,7 @@ export function JobQueuePanel({ jobs, error, onCancel }: Props) {
                 </p>
                 <p className="truncate text-xs text-muted-foreground" title={job.message ?? ''}>
                   {job.message ?? STATUS_LABEL[job.status]}
-                  {job.status === 'done' && job.replaced > 0 ? ` · ${job.replaced} replaced` : ''}
+                  {job.status === 'done' && job.kind === 'compress' && job.replaced > 0 ? ` · ${job.replaced} replaced` : ''}
                 </p>
               </div>
             </div>

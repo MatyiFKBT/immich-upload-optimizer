@@ -33,7 +33,7 @@ export function AssetActions({ disabled, compressible, onCompress, onTrash, onAr
               <action.icon className="size-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{action.enabled ? action.label : 'No smaller candidate available for this format'}</TooltipContent>
+          <TooltipContent>{action.enabled ? action.label : 'The selected compression profile does not support this format'}</TooltipContent>
         </Tooltip>
       ))}
     </>

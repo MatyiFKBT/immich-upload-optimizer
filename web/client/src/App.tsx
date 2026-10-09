@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Minimize2 } from 'lucide-react';
+import { CalendarDays, Film, Minimize2 } from 'lucide-react';
 import { api } from '@/api';
 import { CompressTab } from '@/components/compress/CompressTab';
 import { MonthlyTab } from '@/components/monthly/MonthlyTab';
+import { MotionTab } from '@/components/motion/MotionTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Toaster } from '@/components/ui/toaster';
+import { Toaster } from '@/components/ui/sonner';
 import { cn } from '@/lib/utils';
 import type { Album, ProfileOption } from '@/types';
 
@@ -40,7 +41,7 @@ export function App() {
         <div>
           <p className="text-xs font-semibold tracking-widest text-primary uppercase">Immich tool</p>
           <h1 className="text-3xl font-semibold tracking-tight">Media optimizer</h1>
-          <p className="text-sm text-muted-foreground">Compare smaller versions, and keep the library tidy month by month.</p>
+          <p className="text-sm text-muted-foreground">Compare smaller versions, keep the library tidy month by month, and drop live-photo videos.</p>
         </div>
         <span
           className={cn(
@@ -66,12 +67,19 @@ export function App() {
             <CalendarDays />
             Monthly cleanup
           </TabsTrigger>
+          <TabsTrigger value="motion">
+            <Film />
+            Live photos
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="compress">
           <CompressTab albums={albums} profiles={profiles} />
         </TabsContent>
         <TabsContent value="monthly">
           <MonthlyTab profiles={profiles} />
+        </TabsContent>
+        <TabsContent value="motion">
+          <MotionTab />
         </TabsContent>
       </Tabs>
 

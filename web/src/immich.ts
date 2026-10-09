@@ -13,6 +13,7 @@ import {
   getMyCalendarHeatmap,
   init,
   searchAssets,
+  updateAsset,
   updateAssets,
   upsertTags,
   uploadAsset,
@@ -418,5 +419,54 @@ export async function trashAssets(ids: string[]): Promise<void> {
 
 export async function archiveAssets(ids: string[]): Promise<void> {
   await updateAssets({ assetBulkUpdateDto: { ids, visibility: AssetVisibility.Archive } });
+}
+
+export interface MotionPhoto {
+  id: string;
+  originalFileName: string;
+  localDateTime: string;
+  size: number | null;
+  livePhotoVideoId: string;
+}
+
+const MOTION_PAGE_SIZE = 100;
+
+/**
+ * Still images that still reference a motion video. `isMotion` narrows the query, and the
+ * `livePhotoVideoId` check keeps only assets that really carry a link, so the caller can always
+ * resolve the video it is about to unlink.
+ */
+export async function listMotionPhotos(cursor?: string): Promise<{ items: MotionPhoto[]; nextCursor: string | null; total: number }> {
+  const response = await searchAssets({
+    metadataSearchDto: {
+      filter: { trashedAt: { eq: null }, isMotion: { eq: true }, type: { eq: AssetTypeEnum.Image } },
+      size: MOTION_PAGE_SIZE,
+      withExif: true,
+      ...(cursor ? { cursor } : {}),
+      orderBy: { direction: AssetOrder.Desc, field: SearchOrderField.FileCreatedAt },
+    },
+  });
+
+  const items = response.assets.items.flatMap((asset) => {
+    if (asset.type !== AssetTypeEnum.Image || !asset.livePhotoVideoId) return [];
+    return [{
+      id: asset.id,
+      originalFileName: asset.originalFileName,
+      localDateTime: asset.localDateTime || asset.fileCreatedAt,
+      size: asset.exifInfo?.fileSizeInByte ?? null,
+      livePhotoVideoId: asset.livePhotoVideoId,
+    }];
+  });
+
+  return { items, nextCursor: response.assets.nextCursor ?? null, total: response.assets.total };
+}
+
+/**
+ * Detaches the motion video from a still. Returns the video id Immich still reports afterwards, which
+ * is null on success; the caller must not trash the video while a link remains.
+ */
+export async function unlinkMotionVideo(assetId: string): Promise<string | null> {
+  const updated = await updateAsset({ id: assetId, updateAssetDto: { livePhotoVideoId: null } });
+  return updated.livePhotoVideoId ?? null;
 }
 

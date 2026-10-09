@@ -35,6 +35,12 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Every confirmation offers a "don't ask again" checkbox stored per action kind in local storage, with a *Re-enable prompts* control in the month toolbar.
 - A prepared run that produced nothing eligible finishes itself instead of holding the single active-run slot, and any prepared run can be discarded (`POST /api/batches/:id/abandon`); the monthly compression flow abandons its own run when it cannot complete.
 
+### Live photo tab (third tab)
+
+- Lists still images that still reference a motion video, discovered with `SearchFilter.isMotion` and kept only when `livePhotoVideoId` is present, so the video to unlink is always known. Paged with a load-more cursor.
+- "Unlink and trash" detaches the video with `PUT /assets/{id}` and `livePhotoVideoId: null`, then trashes the video alone with a non-forced delete. The video is only trashed after Immich reports the link is gone, so a still cannot end up pointing at a trashed video; the still's own file, date, albums and tags are untouched.
+- Runs through the same job queue as the other library actions, so it is non-blocking and cancellable while queued.
+
 ## Architecture and deployment
 
 - Add a Hono/Node backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
@@ -60,6 +66,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 9. Add the monthly library endpoints: per-month capture counts, a full-month asset listing, trash, and archive, all validated and rate-limited per request.
 10. Add the two-tab shell and convert both tabs to Tailwind CSS v4 with shadcn/ui components.
 11. Add the monthly cleanup flow: year grid, month view with same-minute burst groups, keep/trash marking, per-group and per-asset actions with confirmation, and the compression-profile selector.
+12. Add the live photo tab: list stills with a linked motion video and unlink the video, trashing it alone through the job queue.
 
 ## Safety invariants
 
@@ -82,3 +89,4 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - The monthly tab shows per-month capture counts for a year and loads a selected month as thumbnails only.
 - Assets captured in the same minute are grouped, keep/trash marks drive the per-group actions, and ungrouped assets expose compress, trash, and archive per asset.
 - Trash uses the non-forced delete so it stays restorable in Immich, and every action is confirmed before it runs.
+- The live-photo tab lists stills with a paired motion video and can drop the video alone, leaving the image, its metadata and its album memberships intact.

@@ -10,20 +10,21 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { ActionKind } from '@/types';
+import type { ConfirmKind } from '@/types';
 
 export interface PendingAction {
-  kind: ActionKind;
+  kind: ConfirmKind;
   assetIds: string[];
   title: string;
   description: string;
   confirmLabel: string;
 }
 
-const KIND_LABEL: Record<ActionKind, string> = {
+const KIND_LABEL: Record<ConfirmKind, string> = {
   compress: 'compress and delete',
   trash: 'trash',
   archive: 'archive',
+  motion: 'unlink and trash motion video',
 };
 
 interface Props {
