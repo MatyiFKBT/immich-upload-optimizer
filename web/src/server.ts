@@ -277,7 +277,15 @@ export function createApp(config: AppConfig): Hono {
       }
       profileId = body.profileId;
     }
-    return jsonResponse(context, 202, enqueueJob({ kind, assetIds, profileId }));
+    if (body.compress !== undefined && typeof body.compress !== 'boolean') {
+      throw new HttpError(400, 'compress must be a boolean');
+    }
+    return jsonResponse(context, 202, enqueueJob({
+      kind,
+      assetIds,
+      profileId,
+      compress: kind === 'motion' && body.compress === true,
+    }));
   });
 
   app.get('/api/library/jobs', (context) => jsonResponse(context, 200, { jobs: listJobs() }));

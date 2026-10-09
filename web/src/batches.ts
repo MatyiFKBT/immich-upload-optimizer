@@ -8,6 +8,7 @@ import {
   ensureOptimizedTagId,
   getAssetSnapshot,
   getAlbumIdsForAsset,
+  readStoredOriginalSize,
   removeOriginal,
   sha1Base64,
   uploadReplacement,
@@ -320,6 +321,14 @@ async function replaceItem(batch: Batch, item: BatchItem, candidate: Candidate):
     throw new Error('Immich reported a duplicate upload; original retained and no metadata or deletion attempted');
   }
   item.replacementId = uploaded.id;
+
+  // Immich must be able to serve the replacement back with exactly the bytes that were uploaded.
+  // Metadata verification alone would not catch an asset that was created but stored unusably.
+  const stored = await readStoredOriginalSize(uploaded.id);
+  if (!stored.readable) throw new Error('Immich could not serve the uploaded replacement back; original retained');
+  if (stored.size !== null && stored.size !== candidate.size) {
+    throw new Error(`Immich stored ${stored.size} bytes for the replacement but ${candidate.size} were uploaded; original retained`);
+  }
 
   // The replacement is marked so the library can show it as already optimized. Tagging is verified
   // with the copied tags, so a tagging failure keeps the original and retries are safe.

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { applyBatchResults, createBatch, getBatch, BatchRequestError, type BatchView } from './batches.js';
-import { archiveAssets, getAssetSnapshot, trashAssets, unlinkMotionVideo } from './immich.js';
+import { archiveAssets, getAssetBrief, getAssetSnapshot, trashAssets, unlinkMotionVideo } from './immich.js';
+import { bestProfileFor, type ProfileId } from './optimizer.js';
 
 export type JobKind = 'compress' | 'trash' | 'archive' | 'motion';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
@@ -12,6 +13,8 @@ export interface JobView {
   /** Assets the job actually settled (replaced or deliberately skipped), for removing them from the grid. */
   resolvedIds: string[];
   profileId: string | null;
+  /** Live-photo jobs only: also compress each still with its best profile after unlinking. */
+  compress: boolean;
   status: JobStatus;
   createdAt: number;
   startedAt: number | null;
@@ -47,13 +50,14 @@ export function listJobs(): JobView[] {
   return [...jobs].reverse();
 }
 
-export function enqueueJob(options: { kind: JobKind; assetIds: string[]; profileId: string | null }): JobView {
+export function enqueueJob(options: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean }): JobView {
   const job: JobView = {
     id: randomUUID(),
     kind: options.kind,
     assetIds: options.assetIds,
     resolvedIds: [],
     profileId: options.profileId,
+    compress: options.compress === true,
     status: 'queued',
     createdAt: Date.now(),
     startedAt: null,
@@ -138,7 +142,9 @@ async function executeJob(job: JobView): Promise<void> {
  */
 async function runUnlinkMotion(job: JobView): Promise<void> {
   const resolved: string[] = [];
+  const unlinkedIds: string[] = [];
   const failures: string[] = [];
+  const lastCompressionNotes: string[] = [];
   let unlinked = 0;
   let skipped = 0;
 
@@ -147,29 +153,77 @@ async function runUnlinkMotion(job: JobView): Promise<void> {
     try {
       const asset = await getAssetSnapshot(assetId);
       label = asset.originalFileName;
-      if (!asset.livePhotoVideoId) {
+      const videoId = asset.livePhotoVideoId;
+      if (!videoId) {
         skipped += 1;
         resolved.push(assetId);
         continue;
       }
+      // Never trust the link blindly: it must point at a different, live video asset, otherwise the
+      // trash step could remove the still itself or an unrelated asset.
+      if (videoId === assetId) {
+        failures.push(`${label}: Immich reports the motion video as the image itself; nothing was changed`);
+        continue;
+      }
+      const linked = await getAssetBrief(videoId);
+      if (!linked.isVideo || linked.isTrashed) {
+        failures.push(`${label}: linked asset is ${linked.isTrashed ? 'already trashed' : 'not a video'}; nothing was changed`);
+        continue;
+      }
       const remaining = await unlinkMotionVideo(assetId);
       if (remaining) throw new Error('Immich still reports the motion video as linked');
-      await trashAssets([asset.livePhotoVideoId]);
+      await trashAssets([videoId]);
       unlinked += 1;
+      unlinkedIds.push(assetId);
       resolved.push(assetId);
     } catch (error) {
       failures.push(`${label}: ${error instanceof Error ? error.message : 'failed'}`);
     }
   }
 
-  job.resolvedIds = resolved;
-  job.skipped = skipped;
-  job.failed = failures.length;
   const parts = [`Unlinked and trashed ${unlinked} motion video(s)`];
   if (skipped > 0) parts.push(`${skipped} had no linked video`);
   if (failures.length > 0) parts.push(`${failures.length} failed`);
-  job.message = `${parts.join(', ')}${failures.length > 0 ? ` — ${failures.slice(0, 2).join(' · ')}` : ''}`;
+
+  // Videos are gone by now, so a compressed replacement can never inherit a dead motion link.
+  const byProfile = new Map<ProfileId, string[]>();
+  let unsupported = 0;
+  if (job.compress) {
+    for (const assetId of unlinkedIds) {
+      const asset = await getAssetSnapshot(assetId);
+      const profileId = bestProfileFor(asset);
+      if (!profileId) {
+        unsupported += 1;
+        continue;
+      }
+      const bucket = byProfile.get(profileId);
+      if (bucket) bucket.push(assetId);
+      else byProfile.set(profileId, [assetId]);
+    }
+    if (unsupported > 0) parts.push(`${unsupported} left uncompressed (no profile for that format)`);
+  }
+
+  for (const [profileId, ids] of byProfile) {
+    try {
+      const summary = await compressAssets(ids, profileId);
+      job.replaced += summary.replaced;
+      job.failed += summary.failed;
+      lastCompressionNotes.push(...summary.notes);
+      parts.push(`${profileId}: ${summariseCompression(summary)}`);
+    } catch (error) {
+      // compressAssets only throws before anything is applied, so these originals are untouched.
+      job.failed += ids.length;
+      parts.push(`${profileId} compression stopped before applying anything: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
+  }
+
+  job.resolvedIds = resolved;
+  job.skipped = skipped;
+  job.failed += failures.length;
+  const notes = [...failures, ...lastCompressionNotes];
+  job.message = `${parts.join(', ')}${notes.length > 0 ? ` — ${notes.slice(0, 2).join(' · ')}` : ''}`;
 }
+
 
 /** Waits for the single optimizer slot instead of failing when the Compress tab holds it. */
 async function createBatchWhenFree(options: { assetIds: string[]; profileIds: string[]; deleteOriginal: boolean }): Promise<{ id: string }> {
@@ -185,14 +239,40 @@ async function createBatchWhenFree(options: { assetIds: string[]; profileIds: st
   }
 }
 
-async function runCompression(job: JobView): Promise<void> {
-  if (!job.profileId) throw new Error('A compression job needs a profile');
-  const created = await createBatchWhenFree({ assetIds: job.assetIds, profileIds: [job.profileId], deleteOriginal: true });
+interface CompressionSummary {
+  replaced: number;
+  skipped: number;
+  failed: number;
+  resolvedIds: string[];
+  notes: string[];
+  /** Apply was requested but the run had not reached a terminal state when we stopped waiting. */
+  stillRunning: boolean;
+}
+
+function summariseBatch(view: BatchView | null, stillRunning: boolean): CompressionSummary {
+  const items = view?.items ?? [];
+  return {
+    replaced: items.filter((item) => item.status === 'replaced').length,
+    skipped: items.filter((item) => item.status === 'skipped').length,
+    failed: items.filter((item) => item.status === 'failed').length,
+    resolvedIds: items.filter((item) => item.status === 'replaced' || item.status === 'skipped').map((item) => item.assetId),
+    notes: items
+      .filter((item) => item.status === 'failed' || (item.status === 'skipped' && item.message))
+      .map((item) => `${item.originalFileName}: ${item.message ?? 'skipped'}`),
+    stillRunning,
+  };
+}
+
+/** Runs one compression batch to completion and applies every candidate Immich verified as smaller. */
+async function compressAssets(assetIds: string[], profileId: string): Promise<CompressionSummary> {
+  const created = await createBatchWhenFree({ assetIds, profileIds: [profileId], deleteOriginal: true });
   const deadline = Date.now() + JOB_TIMEOUT_MS;
+  let lastView: BatchView | null = null;
   const waitFor = async (finished: (view: BatchView) => boolean): Promise<BatchView> => {
     for (;;) {
       const view = getBatch(created.id);
       if (!view) throw new Error('The run disappeared before it finished');
+      lastView = view;
       if (finished(view)) return view;
       if (Date.now() > deadline) throw new Error('The compression run timed out');
       await delay(BATCH_POLL_MS);
@@ -202,26 +282,35 @@ async function runCompression(job: JobView): Promise<void> {
   const prepared = await waitFor((view) => view.status !== 'preparing');
   if (prepared.status === 'abandoned' || prepared.status === 'expired') throw new Error('The run was discarded before it finished');
 
-  let finished = prepared;
-  if (prepared.status === 'review') {
-    const ready = prepared.items.filter((item) => item.status === 'ready' && item.candidates[0]?.eligible === true).map((item) => item.assetId);
-    if (ready.length > 0) {
-      applyBatchResults(created.id, ready);
-      finished = await waitFor((view) => view.status === 'complete' || view.status === 'failed' || view.status === 'abandoned' || view.status === 'expired');
-    }
+  const ready = prepared.status === 'review'
+    ? prepared.items.filter((item) => item.status === 'ready' && item.candidates[0]?.eligible === true).map((item) => item.assetId)
+    : [];
+  if (ready.length === 0) return summariseBatch(prepared, false);
+
+  applyBatchResults(created.id, ready);
+  try {
+    return summariseBatch(await waitFor((view) => view.status === 'complete' || view.status === 'failed' || view.status === 'abandoned' || view.status === 'expired'), false);
+  } catch {
+    // Items were already applied, so replacements may have happened; reporting a failure here would
+    // claim the originals were kept when they may not have been. Report what is actually known.
+    return summariseBatch(lastView, true);
   }
-  if (finished.status === 'abandoned' || finished.status === 'expired') throw new Error('The run was discarded before it finished');
+}
 
-  job.replaced = finished.items.filter((item) => item.status === 'replaced').length;
-  job.skipped = finished.items.filter((item) => item.status === 'skipped').length;
-  job.failed = finished.items.filter((item) => item.status === 'failed').length;
-  job.resolvedIds = finished.items.filter((item) => item.status === 'replaced' || item.status === 'skipped').map((item) => item.assetId);
+function summariseCompression(summary: CompressionSummary): string {
+  const parts = [summary.replaced > 0 ? `Replaced ${summary.replaced} asset(s)` : 'Nothing replaced'];
+  if (summary.skipped > 0) parts.push(`left ${summary.skipped} unchanged`);
+  if (summary.failed > 0) parts.push(`${summary.failed} failed`);
+  if (summary.stillRunning) parts.push('still applying, check the Compress tab');
+  return `${parts.join(', ')}${summary.notes.length > 0 ? ` — ${summary.notes.slice(0, 2).join(' · ')}` : ''}`;
+}
 
-  const parts = [job.replaced > 0 ? `Replaced ${job.replaced} asset(s)` : 'Nothing replaced'];
-  if (job.skipped > 0) parts.push(`left ${job.skipped} unchanged`);
-  if (job.failed > 0) parts.push(`${job.failed} failed`);
-  const notes = finished.items
-    .filter((item) => item.status === 'failed' || (item.status === 'skipped' && item.message))
-    .map((item) => `${item.originalFileName}: ${item.message ?? 'skipped'}`);
-  job.message = `${parts.join(', ')}${notes.length > 0 ? ` — ${notes.slice(0, 2).join(' · ')}` : ''}`;
+async function runCompression(job: JobView): Promise<void> {
+  if (!job.profileId) throw new Error('A compression job needs a profile');
+  const summary = await compressAssets(job.assetIds, job.profileId);
+  job.replaced = summary.replaced;
+  job.skipped = summary.skipped;
+  job.failed = summary.failed;
+  job.resolvedIds = summary.resolvedIds;
+  job.message = summariseCompression(summary);
 }

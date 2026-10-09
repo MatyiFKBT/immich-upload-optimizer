@@ -84,6 +84,15 @@ Build from the repository root:
 docker build -f Dockerfile.goreleaser --target web -t immich-web-media-optimizer:local .
 ```
 
+Every push to the `web-ui` branch also builds and publishes that same target automatically (`.github/workflows/web-image.yaml`):
+
+```sh
+docker pull ghcr.io/<owner>/immich-upload-optimizer-web:latest        # newest web-ui commit
+docker pull ghcr.io/<owner>/immich-upload-optimizer-web:<commit-sha>  # an exact commit
+```
+
+The image is a separate GHCR package from the proxy image, which GoReleaser publishes as `ghcr.io/<owner>/immich-upload-optimizer`, so the two `:latest` tags never collide.
+
 Example Compose service (create protected secret files outside the repository):
 
 ```yaml
@@ -141,7 +150,7 @@ Actions are queued rather than blocking: you can keep reviewing and queue as man
 
 Compressed replacements are tagged `optimized` in Immich (created on first use, verified alongside the copied tags before the original is deleted), and the month view marks any asset carrying that tag, so you can see what has already been optimized.
 
-**Live photos** lists every still image that still carries a paired motion video (iPhone Live Photos, Samsung Motion Photos). Select any of them and *Unlink and trash* detaches the video from the still and moves the video alone to the Immich trash: the photo keeps its date, albums, tags and place in the library, and the image file itself is never modified. The video is only trashed once Immich confirms the link is gone, so a still can never be left pointing at a trashed video. This runs through the same job queue.
+**Live photos** lists every still image that still carries a paired motion video (iPhone Live Photos, Samsung Motion Photos). Select any of them and *Unlink and trash* detaches the video from the still and moves the video alone to the Immich trash: the photo keeps its date, albums, tags and place in the library, and the image file itself is never modified. The video is only trashed once Immich confirms the link is gone, so a still can never be left pointing at a trashed video. This runs through the same job queue. An optional *Also compress each still afterwards* checkbox additionally re-compresses each unlinked still and deletes its original; the profile is chosen automatically per format (AVIF for JPEG and HEIC/HEIF, since the app uploads straight to the Immich API and a JXL original would not render in a browser). Stills that cannot be made smaller are left untouched, and the new asset is verified before the original is replaced.
 
 Each run is limited to 100 images, and individual source files over 1 GiB are skipped. Every mode stages one candidate per selected profile for every selected image under `/data` until you decide on or apply them, so provide enough free space. Temporary candidates are cleared on container restart; prepared originals are never changed. A month in the cleanup tab is capped at 3000 assets and says so when it truncates. The job queue lives in memory: restarting the container drops queued jobs (a job that was mid-run leaves its original untouched unless its replacement had already been verified).
 

@@ -45,7 +45,7 @@ export const api = {
   monthAssets: (year: number, month: number) => request<MonthAssets>(`/api/library/months/${year}/${month}`),
   motionPhotos: (cursor?: string) => request<MotionPhotos>(`/api/library/motion${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
   jobs: () => request<{ jobs: Job[] }>('/api/library/jobs'),
-  enqueueJob: (body: { kind: JobKind; assetIds: string[]; profileId: string | null }) =>
+  enqueueJob: (body: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean }) =>
     request<Job>('/api/library/jobs', { method: 'POST', body }),
   cancelJob: (jobId: string) => request<{ accepted: boolean }>(`/api/library/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
 };

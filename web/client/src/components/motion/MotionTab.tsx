@@ -25,6 +25,7 @@ export function MotionTab() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [compressAfter, setCompressAfter] = useState(false);
   const [promptsHidden, setPromptsHidden] = useState(() => isConfirmationHidden(MOTION));
 
   const load = useCallback(async (cursor?: string) => {
@@ -94,7 +95,7 @@ export function MotionTab() {
   const enqueue = async (assetIds: string[]) => {
     setBusy(true);
     try {
-      await api.enqueueJob({ kind: MOTION, assetIds, profileId: null });
+      await api.enqueueJob({ kind: MOTION, assetIds, profileId: null, compress: compressAfter });
       toast.success(`Unlink queued · ${assetIds.length} live photo(s)`);
       refreshJobs();
     } catch (caught) {
@@ -118,9 +119,10 @@ export function MotionTab() {
       kind: MOTION,
       assetIds,
       title: `Unlink and trash the motion video for ${assetIds.length === 1 ? 'this live photo' : `${assetIds.length} live photos`}?`,
-      description:
-        'Each still image keeps its place in the library and keeps its date, albums and tags; only the paired video is detached and moved to the Immich trash, where it can be restored. The original image file is never modified.',
-      confirmLabel: 'Unlink and trash videos',
+      description: compressAfter
+        ? 'Each still keeps its place in the library, its date, albums and tags. The paired video is detached and moved to the Immich trash, where it can be restored, and the still is then re-compressed with its best profile: the smaller version is uploaded and verified first, and only then is the still replaced, which cannot be undone.'
+        : 'Each still image keeps its place in the library and keeps its date, albums and tags; only the paired video is detached and moved to the Immich trash, where it can be restored. The original image file is never modified.',
+      confirmLabel: compressAfter ? 'Unlink, trash and compress' : 'Unlink and trash videos',
     });
   };
 
@@ -169,7 +171,7 @@ export function MotionTab() {
               </Button>
               <Button size="sm" disabled={busy || selectableCount === 0} onClick={requestAction}>
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <CircleSlash className="size-4" />}
-                Unlink and trash ({selectableCount})
+                {compressAfter ? 'Unlink, trash, compress' : 'Unlink and trash'} ({selectableCount})
               </Button>
             </div>
           </div>
@@ -181,12 +183,25 @@ export function MotionTab() {
           </p>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          {items.length > 0 ? (
-            <label className="flex items-center gap-2 text-sm font-medium">
-              <Checkbox checked={allLoadedSelected} onCheckedChange={(checked) => setAllLoaded(checked === true)} />
-              Select loaded live photos
+          <div className="flex flex-wrap items-center gap-5">
+            {items.length > 0 ? (
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox checked={allLoadedSelected} onCheckedChange={(checked) => setAllLoaded(checked === true)} />
+                Select loaded live photos
+              </label>
+            ) : null}
+            <label className="flex max-w-2xl cursor-pointer items-start gap-2 text-sm font-medium">
+              <Checkbox checked={compressAfter} onCheckedChange={(checked) => setCompressAfter(checked === true)} className="mt-0.5" />
+              <span>
+                Also compress each still afterwards and delete the original
+                <span className="block text-xs font-normal text-muted-foreground">
+                  The profile is picked automatically per format — AVIF for JPEG and HEIC/HEIF. AVIF is used instead of JPEG-XL because this app
+                  uploads straight to the Immich API, so JXL originals would not render in a browser. Stills that cannot be made smaller are left
+                  untouched.
+                </span>
+              </span>
             </label>
-          ) : null}
+          </div>
 
           {loading && items.length === 0 ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

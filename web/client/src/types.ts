@@ -127,6 +127,8 @@ export interface Job {
   assetIds: string[];
   resolvedIds: string[];
   profileId: string | null;
+  /** Live-photo jobs only: the stills are compressed with their best profile after unlinking. */
+  compress: boolean;
   status: JobStatus;
   createdAt: number;
   startedAt: number | null;

@@ -40,6 +40,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Lists still images that still reference a motion video, discovered with `SearchFilter.isMotion` and kept only when `livePhotoVideoId` is present, so the video to unlink is always known. Paged with a load-more cursor.
 - "Unlink and trash" detaches the video with `PUT /assets/{id}` and `livePhotoVideoId: null`, then trashes the video alone with a non-forced delete. The video is only trashed after Immich reports the link is gone, so a still cannot end up pointing at a trashed video; the still's own file, date, albums and tags are untouched.
 - Runs through the same job queue as the other library actions, so it is non-blocking and cancellable while queued.
+- An opt-in *compress afterwards* flag re-compresses each unlinked still with the profile chosen automatically per format (`bestProfileFor`: AVIF for JPEG and HEIC/HEIF, because JXL would not render in a browser given the app bypasses the proxy's download conversion). Stills are grouped per profile and compressed with the existing batch pipeline, delete-original on, after the videos are gone so a replacement never inherits a dead motion link.
 
 ## Architecture and deployment
 
@@ -73,6 +74,8 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - A candidate that is the same size or larger than its source cannot be uploaded.
 - The original is retained by default and is never deleted before a replacement's existence, copied tags, and album membership are verified through Immich.
 - Preserve and verify the linked video asset ID for Live Photos before any optional deletion of the source image.
+- A motion link is never trusted blindly: the linked id must differ from the still and must be an untrashed video asset before the video is unlinked or trashed, so a broken link cannot remove the still.
+- A replacement must be readable back from Immich with exactly the uploaded byte count before any original is removed; a failure at any earlier step retains the original.
 - Failed or ambiguous replacement operations report their state and leave the original intact.
 - Temporary source and candidate data is removed when no longer needed; persistent state, if required for recoverability, must not trigger automatic deletion after restart.
 - API keys and passwords are not embedded in static assets, URLs, logs, or client-visible API responses.

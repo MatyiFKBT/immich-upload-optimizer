@@ -38,6 +38,23 @@ export function compatibleProfiles(asset: { originalFileName: string; originalMi
   return kind ? PROFILES.filter((profile) => profile.sources.some((source) => source === kind)) : [];
 }
 
+/**
+ * Profile used when nobody chooses one explicitly: AVIF for both supported source families.
+ * AVIF wins over JPEG-XL here because the web app uploads straight to the Immich API, so the proxy's
+ * JXL→JPG download conversion never applies and a JXL original would not render in a browser.
+ */
+const PREFERRED_PROFILE_BY_SOURCE: Record<'jpeg' | 'heic', ProfileId> = {
+  jpeg: 'jpeg-avif',
+  heic: 'heic-avif',
+};
+
+export function bestProfileFor(asset: { originalFileName: string; originalMimeType: string | null }): ProfileId | null {
+  const kind = sourceKind(asset);
+  if (!kind) return null;
+  const preferred = PREFERRED_PROFILE_BY_SOURCE[kind];
+  return compatibleProfiles(asset).some((profile) => profile.id === preferred) ? preferred : null;
+}
+
 function runProcess(command: string, args: string[], timeoutMs = 10 * 60 * 1000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });

@@ -101,7 +101,7 @@
       "title": "Live photo tab: unlink and trash paired motion videos",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "New tab lists stills that still reference a motion video (SearchFilter.isMotion, guarded by livePhotoVideoId) with load-more paging. Unlinking uses PUT /assets/{id} with livePhotoVideoId null and only trashes the video after Immich confirms the link is gone; it runs as a 'motion' job in the existing queue."
+      "notes": "New tab lists stills that still reference a motion video (SearchFilter.isMotion, guarded by livePhotoVideoId) with load-more paging. Unlinking uses PUT /assets/{id} with livePhotoVideoId null and only trashes the video after Immich confirms the link is gone. An optional flag then compresses each unlinked still with bestProfileFor (AVIF per source family), grouped per profile and run through the existing batch pipeline once the videos are gone. Motion links are validated (different id, untrashed video asset) before anything is unlinked or trashed, replacements must be readable back with the exact uploaded size before an original is removed, and an interrupted compression is reported as still applying rather than failed."
     },
     {
       "id": "verification",

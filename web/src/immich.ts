@@ -179,6 +179,33 @@ export async function downloadOriginal(id: string, destination: string): Promise
   return fetchImmichFile(getAssetOriginalPath(id), destination);
 }
 
+/**
+ * Confirms Immich can serve an asset's original and reports how many bytes it stores, using a
+ * one-byte range request so the body is never downloaded. Used to prove a replacement is really
+ * retrievable before any original is removed.
+ */
+export async function readStoredOriginalSize(assetId: string): Promise<{ readable: boolean; size: number | null }> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${getAssetOriginalPath(assetId)}`, {
+      headers: { 'x-api-key': apiKey, range: 'bytes=0-0' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    return { readable: false, size: null };
+  }
+
+  const contentRange = response.headers.get('content-range');
+  const contentLength = response.headers.get('content-length');
+  await response.body?.cancel();
+  if (!response.ok) return { readable: false, size: null };
+
+  const total = contentRange ? Number(/bytes \d+-\d+\/(\d+)/.exec(contentRange)?.[1] ?? Number.NaN) : Number.NaN;
+  if (Number.isFinite(total)) return { readable: true, size: total };
+  return { readable: true, size: contentLength ? Number(contentLength) : null };
+}
+
 export type ThumbnailSize = 'thumbnail' | 'preview';
 
 export async function streamThumbnail(id: string, size: ThumbnailSize = 'thumbnail'): Promise<Response> {
@@ -459,6 +486,19 @@ export async function listMotionPhotos(cursor?: string): Promise<{ items: Motion
   });
 
   return { items, nextCursor: response.assets.nextCursor ?? null, total: response.assets.total };
+}
+
+/**
+ * Minimal facts about a linked asset, used to confirm a motion link really points at a live video
+ * before anything destructive is done with it.
+ */
+export async function getAssetBrief(id: string): Promise<{ isVideo: boolean; isTrashed: boolean; originalFileName: string }> {
+  const asset = await getAssetInfo({ id });
+  return {
+    isVideo: asset.type === AssetTypeEnum.Video,
+    isTrashed: asset.isTrashed,
+    originalFileName: asset.originalFileName,
+  };
 }
 
 /**
