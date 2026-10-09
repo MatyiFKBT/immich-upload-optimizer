@@ -1,8 +1,8 @@
 {
   "project": "Immich Web Media Optimizer",
-  "overall_progress_percent": 89,
-  "completed_steps": 7,
-  "total_steps": 8,
+  "overall_progress_percent": 92,
+  "completed_steps": 10,
+  "total_steps": 11,
   "updated_at": "2026-10-08",
   "steps": [
     {
@@ -53,6 +53,27 @@
       "status": "completed",
       "progress_percent": 100,
       "notes": "Shared-toolchain web Docker target and deployment documentation are written; Docker image was not built."
+    },
+    {
+      "id": "library-endpoints",
+      "title": "Add monthly library endpoints: counts, month listing, trash, archive",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "Per-month capture counts come from one calendar-heatmap request; a month listing paginates internally, widens the UTC range and filters by local capture month, and is capped at 3000 assets. Trash uses a non-forced delete, archive sets visibility, and both validate UUID lists against a 500 id limit."
+    },
+    {
+      "id": "shadcn-shell",
+      "title": "Two-tab shell with Tailwind CSS v4 and shadcn/ui",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The SPA moved to Tailwind v4 plus shadcn/ui (new-york/radix registry) with components.json, an @/* alias and generated components/ui. The compress tab was rewritten against the same components; the hand-written stylesheet was removed."
+    },
+    {
+      "id": "monthly-cleanup-ui",
+      "title": "Monthly cleanup flow: year grid, burst groups, per-asset actions",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "Year grid with counts; month view loads thumbnails only and splits same-minute bursts with a suggested keeper. Left click keeps, right click trashes, each burst group has an action bar, ungrouped assets get per-asset compress/trash/archive buttons, a profile selector drives compression, and every action confirms first. Compression reuses the existing batch pipeline with delete-original on."
     },
     {
       "id": "verification",

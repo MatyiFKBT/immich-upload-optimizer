@@ -1,4 +1,4 @@
-import type { Album, AssetItem, Batch, ProfileOption, SearchFilters, SearchResult } from './types';
+import type { Album, Batch, MonthAssets, MonthCounts, ProfileOption, SearchFilters, SearchResult } from './types';
 
 export class ApiError extends Error {}
 
@@ -21,8 +21,8 @@ async function request<T>(path: string, options?: { method?: string; body?: unkn
   return payload as T;
 }
 
-export function thumbnailUrl(assetId: string): string {
-  return `/api/assets/${encodeURIComponent(assetId)}/thumbnail`;
+export function thumbnailUrl(assetId: string, size: 'thumbnail' | 'preview' = 'thumbnail'): string {
+  return `/api/assets/${encodeURIComponent(assetId)}/thumbnail?size=${size}`;
 }
 
 export const api = {
@@ -39,6 +39,10 @@ export const api = {
     }),
   apply: (batchId: string, assetIds: string[]) =>
     request<{ accepted: boolean }>(`/api/batches/${encodeURIComponent(batchId)}/apply`, { method: 'POST', body: { assetIds } }),
+  monthCounts: (year: number) => request<MonthCounts>(`/api/library/months/${year}`),
+  monthAssets: (year: number, month: number) => request<MonthAssets>(`/api/library/months/${year}/${month}`),
+  trash: (assetIds: string[]) => request<{ accepted: number }>('/api/library/trash', { method: 'POST', body: { assetIds } }),
+  archive: (assetIds: string[]) => request<{ accepted: number }>('/api/library/archive', { method: 'POST', body: { assetIds } }),
 };
 
-export type { AssetItem, Batch, SearchFilters };
+export type { AssetItem, Batch, LibraryAsset, MonthAssets, MonthCounts, SearchFilters } from './types';

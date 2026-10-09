@@ -3,13 +3,16 @@ import {
   AssetOrder,
   AssetTypeEnum,
   AssetVisibility,
+  CalendarHeatmapType,
   deleteAssets,
   getAllAlbums,
   getAssetInfo,
   getAssetOriginalPath,
   getAssetThumbnailPath,
+  getMyCalendarHeatmap,
   init,
   searchAssets,
+  updateAssets,
   uploadAsset,
   bulkTagAssets,
   SearchOrderField,
@@ -173,8 +176,10 @@ export async function downloadOriginal(id: string, destination: string): Promise
   return fetchImmichFile(getAssetOriginalPath(id), destination);
 }
 
-export async function streamThumbnail(id: string): Promise<Response> {
-  const path = `${getAssetThumbnailPath(id)}?size=thumbnail`;
+export type ThumbnailSize = 'thumbnail' | 'preview';
+
+export async function streamThumbnail(id: string, size: ThumbnailSize = 'thumbnail'): Promise<Response> {
+  const path = `${getAssetThumbnailPath(id)}?size=${size}`;
   return fetch(`${apiBaseUrl}${path}`, {
     headers: { 'x-api-key': apiKey },
     redirect: 'error',
@@ -262,5 +267,107 @@ export async function verifyReplacement(options: {
 
 export async function removeOriginal(id: string): Promise<void> {
   await deleteAssets({ assetBulkDeleteDto: { ids: [id] } });
+}
+
+export interface MonthCount {
+  month: number;
+  count: number;
+}
+
+export interface LibraryAsset {
+  id: string;
+  originalFileName: string;
+  originalMimeType: string | null;
+  localDateTime: string;
+  fileCreatedAt: string;
+  size: number | null;
+  isVideo: boolean;
+  visibility: AssetVisibility;
+}
+
+const MONTH_ASSET_LIMIT = 3000;
+const MONTH_PAGE_SIZE = 250;
+
+/** Per-month capture counts for a year, aggregated from Immich's per-day calendar heatmap. */
+export async function getMonthCounts(year: number): Promise<{ year: number; months: MonthCount[]; total: number }> {
+  const heatmap = await getMyCalendarHeatmap({
+    $from: `${year}-01-01`,
+    to: `${year}-12-31`,
+    $type: CalendarHeatmapType.Taken,
+  });
+  const months: MonthCount[] = Array.from({ length: 12 }, (_unused, index) => ({ month: index + 1, count: 0 }));
+  for (const day of heatmap.series) {
+    const bucket = months[Number(day.date.slice(5, 7)) - 1];
+    if (bucket) bucket.count += day.count;
+  }
+  return { year, months, total: heatmap.totalCount };
+}
+
+/**
+ * Every asset whose local capture time falls in the given month, newest first, capped at
+ * `MONTH_ASSET_LIMIT`. `takenAt` is compared in UTC while the month is derived from the asset's
+ * local capture time, so the query range is widened by one day on each side and filtered exactly
+ * afterwards.
+ */
+export async function listMonthAssets(year: number, month: number): Promise<{ items: LibraryAsset[]; truncated: boolean; scanned: number }> {
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+  const filter = {
+    trashedAt: { eq: null },
+    takenAt: {
+      gte: new Date(Date.UTC(year, month - 1, 1) - 86_400_000).toISOString(),
+      lte: new Date(Date.UTC(year, month, 1) + 86_400_000).toISOString(),
+    },
+  };
+
+  const items: LibraryAsset[] = [];
+  let cursor: string | undefined;
+  let scanned = 0;
+  let truncated = false;
+
+  for (;;) {
+    const response = await searchAssets({
+      metadataSearchDto: {
+        filter,
+        size: MONTH_PAGE_SIZE,
+        withExif: true,
+        ...(cursor ? { cursor } : {}),
+        orderBy: { direction: AssetOrder.Desc, field: SearchOrderField.FileCreatedAt },
+      },
+    });
+    scanned += response.assets.items.length;
+    for (const asset of response.assets.items) {
+      const capturedAt = asset.localDateTime || asset.fileCreatedAt;
+      if (!capturedAt.startsWith(monthPrefix)) continue;
+      items.push({
+        id: asset.id,
+        originalFileName: asset.originalFileName,
+        originalMimeType: asset.originalMimeType ?? null,
+        localDateTime: capturedAt,
+        fileCreatedAt: asset.fileCreatedAt,
+        size: asset.exifInfo?.fileSizeInByte ?? null,
+        isVideo: asset.type === AssetTypeEnum.Video,
+        visibility: asset.visibility,
+      });
+      if (items.length >= MONTH_ASSET_LIMIT) {
+        truncated = true;
+        break;
+      }
+    }
+    const nextCursor = response.assets.nextCursor ?? null;
+    if (truncated || !nextCursor || response.assets.items.length === 0) break;
+    cursor = nextCursor;
+  }
+
+  items.sort((left, right) => right.localDateTime.localeCompare(left.localDateTime));
+  return { items, truncated, scanned };
+}
+
+/** Moves assets to the Immich trash. Reversible from Immich itself, unlike a forced delete. */
+export async function trashAssets(ids: string[]): Promise<void> {
+  await deleteAssets({ assetBulkDeleteDto: { ids, force: false } });
+}
+
+export async function archiveAssets(ids: string[]): Promise<void> {
+  await updateAssets({ assetBulkUpdateDto: { ids, visibility: AssetVisibility.Archive } });
 }
 

@@ -10,7 +10,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { loadConfig, type AppConfig } from './config.js';
 import { advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
-import { configureImmich, listAlbums, searchImages, streamThumbnail } from './immich.js';
+import { archiveAssets, configureImmich, getMonthCounts, listAlbums, listMonthAssets, searchImages, streamThumbnail, trashAssets, type ThumbnailSize } from './immich.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
@@ -89,6 +89,18 @@ function validDate(value: unknown, label: string): string | undefined {
 }
 
 let indexHtmlCache: string | null = null;
+
+const MAX_BULK_ASSETS = 500;
+
+function assetIdList(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_BULK_ASSETS) {
+    throw new HttpError(400, `Provide between 1 and ${MAX_BULK_ASSETS} asset IDs`);
+  }
+  if (value.some((id) => typeof id !== 'string' || !validateAssetId(id))) throw new HttpError(400, 'Every asset ID must be a UUID');
+  const ids = value as string[];
+  if (new Set(ids).size !== ids.length) throw new HttpError(400, 'Asset IDs must be unique');
+  return ids;
+}
 
 async function indexHtml(): Promise<string> {
   if (indexHtmlCache === null) indexHtmlCache = await readFile(join(CLIENT_DIR, 'index.html'), 'utf8');
@@ -201,13 +213,52 @@ export function createApp(config: AppConfig): Hono {
   app.get('/api/assets/:assetId/thumbnail', async (context) => {
     const assetId = context.req.param('assetId');
     if (!ASSET_ID_PATTERN.test(assetId)) throw new HttpError(404, 'Not found');
-    const upstream = await streamThumbnail(assetId);
+    const requestedSize = context.req.query('size');
+    if (requestedSize !== undefined && requestedSize !== 'thumbnail' && requestedSize !== 'preview') {
+      throw new HttpError(400, 'size must be thumbnail or preview');
+    }
+    const upstream = await streamThumbnail(assetId, (requestedSize ?? 'thumbnail') as ThumbnailSize);
     if (!upstream.ok || !upstream.body) throw new HttpError(upstream.status || 502, 'Unable to retrieve Immich thumbnail');
     return context.body(upstream.body as ReadableStream, 200, {
       'content-type': upstream.headers.get('content-type') ?? 'image/jpeg',
       'cache-control': 'private, max-age=300',
       'x-content-type-options': 'nosniff',
     });
+  });
+
+  app.get('/api/library/months/:year', async (context) => {
+    const year = Number(context.req.param('year'));
+    if (!Number.isInteger(year) || year < 1900 || year > 2200) throw new HttpError(400, 'year must be a four digit year');
+    return jsonResponse(context, 200, await getMonthCounts(year));
+  });
+
+  app.get('/api/library/months/:year/:month', async (context) => {
+    const year = Number(context.req.param('year'));
+    const month = Number(context.req.param('month'));
+    if (!Number.isInteger(year) || year < 1900 || year > 2200) throw new HttpError(400, 'year must be a four digit year');
+    if (!Number.isInteger(month) || month < 1 || month > 12) throw new HttpError(400, 'month must be between 1 and 12');
+    const result = await listMonthAssets(year, month);
+    return jsonResponse(context, 200, {
+      year,
+      month,
+      truncated: result.truncated,
+      items: result.items.map((asset) => ({
+        ...asset,
+        profiles: compatibleProfiles(asset).map((profile) => ({ id: profile.id, label: profile.label })),
+      })),
+    });
+  });
+
+  app.post('/api/library/trash', async (context) => {
+    const ids = assetIdList((await readJson(context)).assetIds);
+    await trashAssets(ids);
+    return jsonResponse(context, 202, { accepted: ids.length });
+  });
+
+  app.post('/api/library/archive', async (context) => {
+    const ids = assetIdList((await readJson(context)).assetIds);
+    await archiveAssets(ids);
+    return jsonResponse(context, 202, { accepted: ids.length });
   });
 
   app.all('/api/*', (context) => jsonResponse(context, 404, { error: 'Not found' }));

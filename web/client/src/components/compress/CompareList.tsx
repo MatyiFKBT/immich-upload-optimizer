@@ -1,0 +1,119 @@
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { thumbnailUrl } from '@/api';
+import { formatBytes } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import type { Batch, BatchItem, BatchItemStatus } from '@/types';
+
+const STATUS_TEXT: Record<BatchItemStatus, string> = {
+  queued: 'Waiting to be processed…',
+  processing: 'Downloading and optimizing…',
+  'awaiting-choice': 'Waiting for your decision…',
+  applying: 'Uploading replacement and verifying metadata…',
+  ready: 'Ready',
+  replaced: 'Replaced',
+  skipped: 'Skipped',
+  failed: 'Failed',
+};
+
+interface Props {
+  batch: Batch;
+  onDecide: (assetId: string, profileId: string | null) => void;
+}
+
+function CompareItem({ item, index, total, onDecide }: { item: BatchItem; index: number; total: number; onDecide: Props['onDecide'] }) {
+  const heading = (
+    <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <span className="truncate text-sm font-medium">{item.originalFileName}</span>
+      <span className="text-xs text-muted-foreground tabular-nums">
+        Image {index + 1} of {total} · original {formatBytes(item.sourceSize)}
+      </span>
+    </div>
+  );
+
+  if (item.status !== 'awaiting-choice') {
+    const outcome = item.message ?? STATUS_TEXT[item.status];
+    return (
+      <div className="space-y-1 rounded-xl border border-border bg-card p-3">
+        {heading}
+        <p className={cn('text-xs', item.status === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>
+          {item.replacementId ? `${outcome} · replacement ${item.replacementId}` : outcome}
+        </p>
+      </div>
+    );
+  }
+
+  const eligibleSizes = item.candidates.filter((candidate) => candidate.eligible && candidate.size !== null).map((candidate) => candidate.size);
+  const bestSize = eligibleSizes.length > 1 ? Math.min(...(eligibleSizes as number[])) : null;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card p-3">
+      {heading}
+      <div className="grid gap-4 sm:grid-cols-[minmax(140px,240px)_1fr]">
+        <img
+          src={thumbnailUrl(item.assetId)}
+          alt={item.originalFileName}
+          loading="lazy"
+          decoding="async"
+          className="aspect-4/3 w-full rounded-lg object-cover"
+        />
+        <div className="space-y-2">
+          {item.candidates.map((candidate) => {
+            const isBest = candidate.size !== null && candidate.size === bestSize;
+            const sizeText =
+              candidate.size === null
+                ? candidate.error
+                : `${formatBytes(candidate.size)} · ${
+                    candidate.eligible ? `${formatBytes((item.sourceSize ?? 0) - candidate.size)} smaller` : 'not smaller than original'
+                  }`;
+            return (
+              <div
+                key={candidate.profileId}
+                className={cn(
+                  'flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3',
+                  isBest ? 'border-success bg-success/5 shadow-[inset_3px_0_0_var(--success)]' : 'border-border',
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    {candidate.label}
+                    {isBest ? <Badge className="bg-success text-success-foreground">Smallest</Badge> : null}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{sizeText}</p>
+                </div>
+                <Button
+                  variant={isBest ? 'default' : 'outline'}
+                  size="sm"
+                  disabled={!candidate.eligible}
+                  onClick={() => onDecide(item.assetId, candidate.profileId)}
+                >
+                  {candidate.eligible ? (isBest ? 'Replace with smallest' : 'Replace with this') : 'Not eligible'}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => onDecide(item.assetId, null)}>
+          Keep original
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function CompareList({ batch, onDecide }: Props) {
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        {batch.awaiting > 0
+          ? `Every selected image is already optimized. ${batch.awaiting} still need a decision.`
+          : 'All images have been decided.'}
+      </p>
+      {batch.items.map((item, index) => (
+        <CompareItem key={item.assetId} item={item} index={index} total={batch.total} onDecide={onDecide} />
+      ))}
+    </div>
+  );
+}

@@ -81,3 +81,37 @@ export interface SearchResult {
   total: number;
   profiles: ProfileOption[];
 }
+
+export type AssetVisibility = 'archive' | 'timeline' | 'hidden' | 'locked';
+
+export type ActionKind = 'compress' | 'trash' | 'archive';
+
+export interface LibraryAsset {
+  id: string;
+  originalFileName: string;
+  originalMimeType: string | null;
+  localDateTime: string;
+  fileCreatedAt: string;
+  size: number | null;
+  isVideo: boolean;
+  visibility: AssetVisibility;
+  profiles: AssetProfile[];
+}
+
+export interface MonthCount {
+  month: number;
+  count: number;
+}
+
+export interface MonthCounts {
+  year: number;
+  months: MonthCount[];
+  total: number;
+}
+
+export interface MonthAssets {
+  year: number;
+  month: number;
+  truncated: boolean;
+  items: LibraryAsset[];
+}

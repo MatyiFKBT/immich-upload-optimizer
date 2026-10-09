@@ -25,7 +25,7 @@ export interface Candidate {
   error: string | null;
 }
 
-function sourceKind(asset: SearchAsset): 'jpeg' | 'heic' | null {
+function sourceKind(asset: { originalFileName: string; originalMimeType: string | null }): 'jpeg' | 'heic' | null {
   const extension = extname(basename(asset.originalFileName)).toLowerCase();
   const mime = (asset.originalMimeType ?? '').toLowerCase();
   if ((extension === '.jpg' || extension === '.jpeg') && (!mime || mime === 'image/jpeg')) return 'jpeg';
@@ -33,7 +33,7 @@ function sourceKind(asset: SearchAsset): 'jpeg' | 'heic' | null {
   return null;
 }
 
-export function compatibleProfiles(asset: SearchAsset): typeof PROFILES[number][] {
+export function compatibleProfiles(asset: { originalFileName: string; originalMimeType: string | null }): typeof PROFILES[number][] {
   const kind = sourceKind(asset);
   return kind ? PROFILES.filter((profile) => profile.sources.some((source) => source === kind)) : [];
 }
