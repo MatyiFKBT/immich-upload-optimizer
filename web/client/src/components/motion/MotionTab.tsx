@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CircleSlash, Film, Loader2, RefreshCw } from 'lucide-react';
 import { api, thumbnailUrl, type Job, type MotionPhoto } from '@/api';
 import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionConfirm';
@@ -24,6 +24,11 @@ export function MotionTab() {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
+  const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const tileBoxesRef = useRef<{ id: string; rect: DOMRect }[]>([]);
+  const dragRef = useRef<{ startX: number; startY: number; tileId: string | null; shift: boolean; moved: boolean; base: ReadonlySet<string> } | null>(null);
+  const anchorRef = useRef<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [compressAfter, setCompressAfter] = useState(false);
   const [promptsHidden, setPromptsHidden] = useState(() => isConfirmationHidden(MOTION));
@@ -47,6 +52,22 @@ export function MotionTab() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        anchorRef.current = null;
+        setSelected(new Set());
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        setSelected(new Set(items.map((item) => item.id)));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [items]);
+
   const handleSettled = useCallback(
     (job: Job) => {
       if (job.kind !== MOTION) return;
@@ -66,7 +87,20 @@ export function MotionTab() {
 
   const { jobs, error: jobsError, refresh: refreshJobs } = useJobs(handleSettled);
 
+  const pendingAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const job of jobs) {
+      if (job.status !== 'queued' && job.status !== 'running') continue;
+      for (const id of job.assetIds) ids.add(id);
+    }
+    return ids;
+  }, [jobs]);
+
+  const selectable = useCallback((id: string) => !pendingAssetIds.has(id), [pendingAssetIds]);
+
   const toggle = (assetId: string) => {
+    if (!selectable(assetId)) return;
+    anchorRef.current = assetId;
     setSelected((previous) => {
       const next = new Set(previous);
       if (next.has(assetId)) next.delete(assetId);
@@ -86,11 +120,97 @@ export function MotionTab() {
     });
   };
 
-  const pendingAssetIds = new Set<string>();
-  for (const job of jobs) {
-    if (job.status !== 'queued' && job.status !== 'running') continue;
-    for (const id of job.assetIds) pendingAssetIds.add(id);
-  }
+  /** Everything between the last clicked tile and this one, in the order shown. */
+  const selectRange = (assetId: string) => {
+    const anchor = anchorRef.current;
+    if (!anchor) {
+      toggle(assetId);
+      return;
+    }
+    const ids = items.map((item) => item.id);
+    const from = ids.indexOf(anchor);
+    const to = ids.indexOf(assetId);
+    if (from < 0 || to < 0) return;
+    setSelected((previous) => {
+      const next = new Set(previous);
+      for (let index = Math.min(from, to); index <= Math.max(from, to); index += 1) {
+        const id = ids[index];
+        if (id && selectable(id)) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  /** Tiles intersecting the dragged rectangle, plus whatever was selected before the drag. */
+  const selectionWithin = (rect: { left: number; top: number; width: number; height: number }, base: ReadonlySet<string>) => {
+    const next = new Set(base);
+    for (const tile of tileBoxesRef.current) {
+      if (tile.rect.right < rect.left || tile.rect.left > rect.left + rect.width) continue;
+      if (tile.rect.bottom < rect.top || tile.rect.top > rect.top + rect.height) continue;
+      if (selectable(tile.id)) next.add(tile.id);
+    }
+    return next;
+  };
+
+  const startDrag = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    // Let the checkbox, buttons and links keep their own behaviour.
+    if (target.closest('button, a, label, input')) return;
+    const container = gridRef.current;
+    if (!container) return;
+    event.preventDefault();
+
+    const additive = event.shiftKey || event.metaKey || event.ctrlKey;
+    tileBoxesRef.current = [...container.querySelectorAll<HTMLElement>('[data-motion-tile]')].map((element) => ({
+      id: element.dataset.motionTile ?? '',
+      rect: element.getBoundingClientRect(),
+    }));
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      tileId: target.closest<HTMLElement>('[data-motion-tile]')?.dataset.motionTile ?? null,
+      shift: event.shiftKey,
+      moved: false,
+      base: additive ? new Set(selected) : new Set<string>(),
+    };
+  };
+
+  const continueDrag = (event: React.MouseEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (!drag.moved) {
+      if (Math.abs(event.clientX - drag.startX) < 4 && Math.abs(event.clientY - drag.startY) < 4) return;
+      drag.moved = true;
+    }
+    const rect = {
+      left: Math.min(drag.startX, event.clientX),
+      top: Math.min(drag.startY, event.clientY),
+      width: Math.abs(event.clientX - drag.startX),
+      height: Math.abs(event.clientY - drag.startY),
+    };
+    setMarquee(rect);
+    setSelected(selectionWithin(rect, drag.base));
+  };
+
+  const endDrag = (_event: React.MouseEvent<HTMLDivElement>, cancelled: boolean) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setMarquee(null);
+    if (!drag) return;
+    if (drag.moved) return;
+
+    if (cancelled || !drag.tileId) return;
+    // A click on the gaps between tiles does nothing, so a near miss cannot wipe the selection;
+    // Esc and the Clear button are the deliberate ways to reset it.
+    if (drag.shift) selectRange(drag.tileId);
+    else toggle(drag.tileId);
+  };
+
+  const clearSelection = () => {
+    anchorRef.current = null;
+    setSelected(new Set());
+  };
 
   const enqueue = async (assetIds: string[]) => {
     setBusy(true);
@@ -181,14 +301,24 @@ export function MotionTab() {
             {loading && items.length === 0 ? 'Searching Immich…' : `${items.length} shown · ${total} Immich matches`}
             {' · jobs run one after another, so you can queue more while one is running'}
           </p>
+          <p className="text-xs text-muted-foreground">
+            Click a photo to select it · Shift+click for a range · drag a box to grab several · Cmd/Ctrl+A selects all · Esc clears
+          </p>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           <div className="flex flex-wrap items-center gap-5">
             {items.length > 0 ? (
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <Checkbox checked={allLoadedSelected} onCheckedChange={(checked) => setAllLoaded(checked === true)} />
-                Select loaded live photos
-              </label>
+              <>
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <Checkbox checked={allLoadedSelected} onCheckedChange={(checked) => setAllLoaded(checked === true)} />
+                  Select loaded live photos
+                </label>
+                {selected.size > 0 ? (
+                  <Button variant="ghost" size="sm" onClick={() => clearSelection()}>
+                    Clear ({selected.size})
+                  </Button>
+                ) : null}
+              </>
             ) : null}
             <label className="flex max-w-2xl cursor-pointer items-start gap-2 text-sm font-medium">
               <Checkbox checked={compressAfter} onCheckedChange={(checked) => setCompressAfter(checked === true)} className="mt-0.5" />
@@ -212,19 +342,34 @@ export function MotionTab() {
           ) : null}
 
           {items.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div
+              ref={gridRef}
+              className="grid grid-cols-2 gap-3 select-none sm:grid-cols-3 lg:grid-cols-5"
+              onMouseDown={startDrag}
+              onMouseMove={continueDrag}
+              onMouseUp={(event) => endDrag(event, false)}
+              onMouseLeave={(event) => endDrag(event, true)}
+            >
               {items.map((item) => {
                 const isPending = pendingAssetIds.has(item.id);
                 return (
                   <div
                     key={item.id}
+                    data-motion-tile={item.id}
                     className={cn(
-                      'asset-tile overflow-hidden rounded-xl border bg-card',
+                      'asset-tile cursor-pointer overflow-hidden rounded-xl border bg-card',
                       selected.has(item.id) ? 'border-primary ring-2 ring-primary/30' : 'border-border',
                     )}
                   >
                     <div className="relative aspect-4/3 bg-muted">
-                      <img src={thumbnailUrl(item.id)} alt={item.originalFileName} loading="lazy" decoding="async" className="size-full object-cover" />
+                      <img
+                        src={thumbnailUrl(item.id)}
+                        alt={item.originalFileName}
+                        loading="lazy"
+                        decoding="async"
+                        draggable={false}
+                        className="size-full object-cover"
+                      />
                       <label className="absolute top-2 left-2 grid size-6 place-items-center rounded-md bg-background/90">
                         <Checkbox
                           checked={selected.has(item.id)}
@@ -275,6 +420,13 @@ export function MotionTab() {
       </Card>
 
       <JobQueuePanel jobs={jobs.filter((job) => job.kind === MOTION)} error={jobsError} onCancel={(jobId) => void api.cancelJob(jobId).then(refreshJobs).catch(() => toast.error('Unable to cancel the job'))} />
+
+      {marquee ? (
+        <div
+          className="pointer-events-none fixed z-50 rounded-sm border border-primary bg-primary/15"
+          style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
+        />
+      ) : null}
 
       <ActionConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={confirmPending} />
     </div>
