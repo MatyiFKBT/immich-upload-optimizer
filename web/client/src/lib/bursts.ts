@@ -8,13 +8,15 @@ export interface BurstGroup {
   items: LibraryAsset[];
 }
 
-export interface BurstSplit {
-  groups: BurstGroup[];
-  rest: LibraryAsset[];
-}
+/** Render-ready blocks: bursts stay together, surrounding singles collapse into one grid. */
+export type TimelineBlock = { kind: 'group'; key: string; items: LibraryAsset[] } | { kind: 'singles'; assets: LibraryAsset[] };
 
-/** Splits a month into same-minute groups (bursts) and everything else, preserving input order. */
-export function splitBursts(assets: LibraryAsset[]): BurstSplit {
+/**
+ * One ordered stream for a month: assets sharing a capture minute form a burst, everything else is a
+ * single. Order follows the input, which the server returns oldest first, so the month reads from the
+ * 1st onwards and bursts sit exactly where they happened.
+ */
+export function buildTimeline(assets: LibraryAsset[]): TimelineBlock[] {
   const buckets = new Map<string, LibraryAsset[]>();
   for (const asset of assets) {
     const key = asset.localDateTime.slice(0, 16);
@@ -23,13 +25,25 @@ export function splitBursts(assets: LibraryAsset[]): BurstSplit {
     else buckets.set(key, [asset]);
   }
 
-  const groups: BurstGroup[] = [];
-  const rest: LibraryAsset[] = [];
+  const blocks: TimelineBlock[] = [];
+  let singles: LibraryAsset[] = [];
+  const flushSingles = () => {
+    if (singles.length > 0) {
+      blocks.push({ kind: 'singles', assets: singles });
+      singles = [];
+    }
+  };
+
   for (const [key, items] of buckets) {
-    if (items.length > 1) groups.push({ key, items });
-    else rest.push(...items);
+    if (items.length > 1) {
+      flushSingles();
+      blocks.push({ kind: 'group', key, items });
+    } else {
+      singles.push(...items);
+    }
   }
-  return { groups, rest };
+  flushSingles();
+  return blocks;
 }
 
 /** The largest file in a burst is usually the best frame to keep; a hint, never enforced. */

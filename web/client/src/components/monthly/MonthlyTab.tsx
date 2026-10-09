@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/api';
 import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionConfirm';
+import { JobQueuePanel } from '@/components/monthly/JobQueuePanel';
 import { MonthView } from '@/components/monthly/MonthView';
 import { YearOverview } from '@/components/monthly/YearOverview';
 import { toast } from '@/components/ui/toaster';
+import { useJobs } from '@/hooks/useJobs';
 import { clearConfirmations, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { useMonthAssets, useMonthCounts } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
-import { compressAndDeleteOriginals } from '@/lib/compress';
-import type { ActionKind, ProfileOption } from '@/types';
+import type { ActionKind, Job, ProfileOption } from '@/types';
 
 interface Props {
   profiles: ProfileOption[];
@@ -16,22 +17,28 @@ interface Props {
 
 const ACTION_KINDS: readonly ActionKind[] = ['compress', 'trash', 'archive'];
 
+const KIND_LABEL: Record<ActionKind, string> = {
+  compress: 'Compress and delete original',
+  trash: 'Move to trash',
+  archive: 'Archive',
+};
+
 const ACTION_COPY: Record<ActionKind, { title: (what: string) => string; description: string; confirmLabel: string }> = {
   compress: {
-    title: (what) => `Compress ${what} and delete the originals?`,
+    title: (what) => `Queue compression for ${what}?`,
     description:
-      'Each original is replaced only after the smaller candidate is uploaded, verified, and its tags and albums are copied. The original is deleted afterwards. A replacement cannot be undone.',
-    confirmLabel: 'Compress and delete originals',
+      'The job runs in the background, one job at a time. Each original is replaced only after the smaller candidate is uploaded, verified, tagged, and its tags and albums are copied; the original is deleted afterwards. A replacement cannot be undone.',
+    confirmLabel: 'Queue compression',
   },
   trash: {
-    title: (what) => `Move ${what} to the Immich trash?`,
+    title: (what) => `Queue trashing ${what}?`,
     description: 'Trashed assets stay in Immich and can be restored from there.',
-    confirmLabel: 'Move to trash',
+    confirmLabel: 'Queue trash',
   },
   archive: {
-    title: (what) => `Archive ${what}?`,
+    title: (what) => `Queue archiving ${what}?`,
     description: 'Archived assets leave the timeline but stay in the library.',
-    confirmLabel: 'Archive',
+    confirmLabel: 'Queue archive',
   },
 };
 
@@ -47,11 +54,42 @@ export function MonthlyTab({ profiles }: Props) {
   const { counts, loading: countsLoading, error: countsError } = useMonthCounts(year);
   const { assets, truncated, loading, error, remove } = useMonthAssets(year, month);
 
+  const handleSettled = useCallback(
+    (job: Job) => {
+      const affected = job.resolvedIds.length > 0 ? job.resolvedIds : job.assetIds;
+      remove(affected);
+      setMarks((previous) => {
+        const next = new Map(previous);
+        for (const id of affected) next.delete(id);
+        return next;
+      });
+      if (job.status === 'failed') {
+        toast.error(`${KIND_LABEL[job.kind]} failed — ${job.message ?? 'unknown error'}`);
+      } else if (job.kind === 'compress' && job.replaced === 0) {
+        toast.info(job.message ?? 'Nothing was replaced');
+      } else {
+        toast.success(job.message ?? `${KIND_LABEL[job.kind]} finished`);
+      }
+    },
+    [remove],
+  );
+
+  const { jobs, error: jobsError, refresh: refreshJobs } = useJobs(handleSettled);
+
   useEffect(() => {
     setMarks(new Map());
   }, [year, month]);
 
   const activeProfileId = profileId || profiles[0]?.id || '';
+
+  const pendingAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const job of jobs) {
+      if (job.status !== 'queued' && job.status !== 'running') continue;
+      for (const id of job.assetIds) ids.add(id);
+    }
+    return ids;
+  }, [jobs]);
 
   const toggleMark = (assetId: string, mark: Mark) => {
     setMarks((previous) => {
@@ -62,31 +100,18 @@ export function MonthlyTab({ profiles }: Props) {
     });
   };
 
-  const runAction = async (kind: ActionKind, assetIds: string[]) => {
+  const submitJob = async (kind: ActionKind, assetIds: string[]) => {
+    if (kind === 'compress' && !activeProfileId) {
+      toast.error('Choose a compression profile first');
+      return;
+    }
     setBusy(true);
     try {
-      let resolvedIds = assetIds;
-      if (kind === 'trash') {
-        const result = await api.trash(assetIds);
-        toast.success(`Moved ${result.accepted} asset(s) to the trash`);
-      } else if (kind === 'archive') {
-        const result = await api.archive(assetIds);
-        toast.success(`Archived ${result.accepted} asset(s)`);
-      } else {
-        const outcome = await compressAndDeleteOriginals(assetIds, activeProfileId);
-        resolvedIds = outcome.resolvedIds;
-        if (outcome.replaced > 0) toast.success(`Replaced ${outcome.replaced} asset(s) with smaller versions`);
-        if (outcome.skipped > 0) toast.info(`Left ${outcome.skipped} asset(s) unchanged: no strictly smaller candidate`);
-        if (outcome.failed > 0) toast.error(`${outcome.failed} asset(s) failed — ${outcome.notes.slice(0, 2).join(' · ')}`);
-      }
-      remove(resolvedIds);
-      setMarks((previous) => {
-        const next = new Map(previous);
-        for (const id of resolvedIds) next.delete(id);
-        return next;
-      });
+      await api.enqueueJob({ kind, assetIds, profileId: kind === 'compress' ? activeProfileId : null });
+      toast.success(`${KIND_LABEL[kind]} queued · ${assetIds.length} asset(s)`);
+      refreshJobs();
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : 'The action failed');
+      toast.error(caught instanceof Error ? caught.message : 'Unable to queue the job');
     } finally {
       setBusy(false);
     }
@@ -95,7 +120,7 @@ export function MonthlyTab({ profiles }: Props) {
   const requestAction = (kind: ActionKind, assetIds: string[]) => {
     if (assetIds.length === 0) return;
     if (isConfirmationHidden(kind)) {
-      void runAction(kind, assetIds);
+      void submitJob(kind, assetIds);
       return;
     }
     const what = assetIds.length === 1 ? 'this asset' : `${assetIds.length} assets`;
@@ -111,7 +136,17 @@ export function MonthlyTab({ profiles }: Props) {
       setPromptsHidden(true);
       toast.info(`No longer asking before ${action.kind} actions. Use “Re-enable prompts” to bring them back.`);
     }
-    void runAction(action.kind, action.assetIds);
+    void submitJob(action.kind, action.assetIds);
+  };
+
+  const cancelQueuedJob = async (jobId: string) => {
+    try {
+      await api.cancelJob(jobId);
+      toast.info('Queued job cancelled');
+      refreshJobs();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Unable to cancel the job');
+    }
   };
 
   const resetPrompts = () => {
@@ -121,7 +156,7 @@ export function MonthlyTab({ profiles }: Props) {
   };
 
   return (
-    <>
+    <div className="space-y-5">
       {month === null ? (
         <YearOverview
           year={year}
@@ -144,6 +179,7 @@ export function MonthlyTab({ profiles }: Props) {
           profileId={activeProfileId}
           busy={busy}
           promptsHidden={promptsHidden}
+          pendingAssetIds={pendingAssetIds}
           onBack={() => setMonth(null)}
           onMark={toggleMark}
           onProfileChange={setProfileId}
@@ -152,7 +188,9 @@ export function MonthlyTab({ profiles }: Props) {
         />
       )}
 
+      <JobQueuePanel jobs={jobs} error={jobsError} onCancel={(jobId) => void cancelQueuedJob(jobId)} />
+
       <ActionConfirm pending={pending} onCancel={() => setPending(null)} onConfirm={confirmPending} />
-    </>
+    </div>
   );
 }

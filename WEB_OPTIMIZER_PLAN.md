@@ -29,6 +29,9 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Ungrouped assets each get three per-asset buttons: compress and delete original, trash, archive.
 - A compression-profile selector in the month toolbar chooses the profile used by every compress action in that tab.
 - Trash uses `DELETE /assets` with `force: false` (reversible Immich trash), archive uses `PUT /assets` with `visibility: "archive"`.
+- The month is rendered as one stream ordered oldest first: assets sharing a capture minute collapse into a burst block, and consecutive singles collapse into ordinary grids, so the month reads from the 1st onwards.
+- Library actions are enqueued as jobs and executed one at a time by an in-memory FIFO queue; a compression job waits for the single optimizer slot instead of failing when the Compress tab holds it. Assets with a pending job cannot be queued again, and a still-queued job can be cancelled.
+- Compressed replacements are tagged `optimized` (upserted by name via `PUT /tags`, then verified together with the copied tags before any original is deleted). The month listing marks assets that already carry the tag by querying `SearchFilter.tagIds` over the same capture range.
 - Every confirmation offers a "don't ask again" checkbox stored per action kind in local storage, with a *Re-enable prompts* control in the month toolbar.
 - A prepared run that produced nothing eligible finishes itself instead of holding the single active-run slot, and any prepared run can be discarded (`POST /api/batches/:id/abandon`); the monthly compression flow abandons its own run when it cannot complete.
 

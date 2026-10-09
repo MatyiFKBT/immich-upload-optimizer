@@ -51,6 +51,9 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
             video
           </Badge>
         ) : null}
+        {asset.optimized ? (
+          <Badge className="absolute bottom-2 left-2 bg-success text-success-foreground">optimized</Badge>
+        ) : null}
       </button>
 
       <div className="min-w-0 px-1">

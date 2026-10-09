@@ -1,4 +1,4 @@
-import type { Album, Batch, MonthAssets, MonthCounts, ProfileOption, SearchFilters, SearchResult } from './types';
+import type { Album, Batch, Job, JobKind, MonthAssets, MonthCounts, ProfileOption, SearchFilters, SearchResult } from './types';
 
 export class ApiError extends Error {}
 
@@ -43,8 +43,10 @@ export const api = {
     request<{ accepted: boolean }>(`/api/batches/${encodeURIComponent(batchId)}/abandon`, { method: 'POST', body: {} }),
   monthCounts: (year: number) => request<MonthCounts>(`/api/library/months/${year}`),
   monthAssets: (year: number, month: number) => request<MonthAssets>(`/api/library/months/${year}/${month}`),
-  trash: (assetIds: string[]) => request<{ accepted: number }>('/api/library/trash', { method: 'POST', body: { assetIds } }),
-  archive: (assetIds: string[]) => request<{ accepted: number }>('/api/library/archive', { method: 'POST', body: { assetIds } }),
+  jobs: () => request<{ jobs: Job[] }>('/api/library/jobs'),
+  enqueueJob: (body: { kind: JobKind; assetIds: string[]; profileId: string | null }) =>
+    request<Job>('/api/library/jobs', { method: 'POST', body }),
+  cancelJob: (jobId: string) => request<{ accepted: boolean }>(`/api/library/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
 };
 
-export type { AssetItem, Batch, LibraryAsset, MonthAssets, MonthCounts, SearchFilters } from './types';
+export type { AssetItem, Batch, Job, JobKind, LibraryAsset, MonthAssets, MonthCounts, SearchFilters } from './types';

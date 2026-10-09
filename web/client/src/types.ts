@@ -95,7 +95,28 @@ export interface LibraryAsset {
   size: number | null;
   isVideo: boolean;
   visibility: AssetVisibility;
+  /** Carries the `optimized` tag, i.e. a smaller replacement was already uploaded for it. */
+  optimized: boolean;
   profiles: AssetProfile[];
+}
+
+export type JobKind = ActionKind;
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export interface Job {
+  id: string;
+  kind: JobKind;
+  assetIds: string[];
+  resolvedIds: string[];
+  profileId: string | null;
+  status: JobStatus;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  replaced: number;
+  skipped: number;
+  failed: number;
+  message: string | null;
 }
 
 export interface MonthCount {

@@ -1,9 +1,10 @@
+import { useMemo } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { splitBursts, type Mark } from '@/lib/bursts';
+import { buildTimeline, type Mark } from '@/lib/bursts';
 import { formatBytes } from '@/lib/format';
 import { monthLabel } from '@/lib/months';
 import type { ActionKind, LibraryAsset, ProfileOption } from '@/types';
@@ -23,6 +24,7 @@ interface Props {
   profileId: string;
   busy: boolean;
   promptsHidden: boolean;
+  pendingAssetIds: ReadonlySet<string>;
   onBack: () => void;
   onMark: (assetId: string, mark: Mark) => void;
   onProfileChange: (profileId: string) => void;
@@ -42,18 +44,21 @@ export function MonthView({
   profileId,
   busy,
   promptsHidden,
+  pendingAssetIds,
   onBack,
   onMark,
   onProfileChange,
   onAction,
   onResetPrompts,
 }: Props) {
-  const { groups, rest } = splitBursts(assets);
+  // Server order is oldest first, so the month reads 1st → end with bursts where they happened.
+  const blocks = useMemo(() => buildTimeline(assets), [assets]);
   const totalSize = assets.reduce((sum, asset) => sum + (asset.size ?? 0), 0);
+  const optimizedCount = assets.filter((asset) => asset.optimized).length;
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="space-y-5">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-start gap-3">
             <Button variant="outline" size="icon" aria-label="Back to the year" onClick={onBack}>
@@ -65,8 +70,9 @@ export function MonthView({
               </h2>
               <p className="text-sm text-muted-foreground">
                 {loading ? 'Loading the month…' : `${assets.length} asset(s) · ${formatBytes(totalSize)}`}
+                {optimizedCount > 0 ? ` · ${optimizedCount} already optimized` : ''}
                 {truncated ? ' · capped, some assets are not shown' : ''}
-                {busy ? ' · working…' : ''}
+                {busy ? ' · queueing…' : ''}
               </p>
             </div>
           </div>
@@ -93,6 +99,11 @@ export function MonthView({
           </div>
         </div>
 
+        <p className="text-xs text-muted-foreground">
+          Ordered from the 1st. Bursts share a capture minute and keep their own action bar; single images carry their own buttons.
+          Actions are queued and run one after another, so you can keep working.
+        </p>
+
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         {loading ? (
@@ -103,39 +114,39 @@ export function MonthView({
           </div>
         ) : null}
 
-        {!loading && groups.length > 0 ? (
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">Match groups</h3>
-            {groups.map((group) => (
-              <BurstGroupCard key={group.key} group={group} marks={marks} busy={busy} onMark={onMark} onAction={onAction} />
-            ))}
-          </section>
-        ) : null}
-
-        {!loading && rest.length > 0 ? (
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-              Remaining images ({rest.length})
-            </h3>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-              {rest.map((asset) => (
-                <PhotoTile
-                  key={asset.id}
-                  asset={asset}
-                  footer={
-                    <AssetActions
-                      disabled={busy}
-                      compressible={asset.profiles.length > 0 && !asset.isVideo}
-                      onCompress={() => onAction('compress', [asset.id])}
-                      onTrash={() => onAction('trash', [asset.id])}
-                      onArchive={() => onAction('archive', [asset.id])}
-                    />
-                  }
+        {!loading
+          ? blocks.map((block) =>
+              block.kind === 'group' ? (
+                <BurstGroupCard
+                  key={`group:${block.key}`}
+                  group={{ key: block.key, items: block.items }}
+                  marks={marks}
+                  pending={pendingAssetIds}
+                  busy={busy}
+                  onMark={onMark}
+                  onAction={onAction}
                 />
-              ))}
-            </div>
-          </section>
-        ) : null}
+              ) : (
+                <div key={`singles:${block.assets[0]?.id ?? 'empty'}`} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {block.assets.map((asset) => (
+                    <PhotoTile
+                      key={asset.id}
+                      asset={asset}
+                      footer={
+                        <AssetActions
+                          disabled={busy || pendingAssetIds.has(asset.id)}
+                          compressible={asset.profiles.length > 0 && !asset.isVideo}
+                          onCompress={() => onAction('compress', [asset.id])}
+                          onTrash={() => onAction('trash', [asset.id])}
+                          onArchive={() => onAction('archive', [asset.id])}
+                        />
+                      }
+                    />
+                  ))}
+                </div>
+              ),
+            )
+          : null}
 
         {!loading && assets.length === 0 && !error ? (
           <p className="text-sm text-muted-foreground">No images or videos were captured in this month.</p>

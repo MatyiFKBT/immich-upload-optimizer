@@ -9,10 +9,12 @@ import {
   getAssetInfo,
   getAssetOriginalPath,
   getAssetThumbnailPath,
+  getAllTags,
   getMyCalendarHeatmap,
   init,
   searchAssets,
   updateAssets,
+  upsertTags,
   uploadAsset,
   bulkTagAssets,
   SearchOrderField,
@@ -209,7 +211,7 @@ export async function uploadReplacement(options: {
   // Immich derives the asset type from the multipart file part's own filename. oazapfts appends a
   // bare Blob without a filename, which the runtime labels "blob" and Immich rejects with
   // "Unsupported file type blob", so the part must be a File carrying the real name.
-  const assetData = new File([blob as unknown as BlobPart], filename, { type: options.mimeType });
+  const assetData = new File([blob], filename, { type: options.mimeType });
   const result = await uploadAsset({
     xImmichChecksum: checksum,
     assetMediaCreateDto: {
@@ -309,7 +311,7 @@ export async function getMonthCounts(year: number): Promise<{ year: number; mont
  * local capture time, so the query range is widened by one day on each side and filtered exactly
  * afterwards.
  */
-export async function listMonthAssets(year: number, month: number): Promise<{ items: LibraryAsset[]; truncated: boolean; scanned: number }> {
+export async function listMonthAssets(year: number, month: number): Promise<{ items: LibraryAsset[]; truncated: boolean; scanned: number; range: { from: string; to: string } }> {
   const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
   const filter = {
     trashedAt: { eq: null },
@@ -331,7 +333,7 @@ export async function listMonthAssets(year: number, month: number): Promise<{ it
         size: MONTH_PAGE_SIZE,
         withExif: true,
         ...(cursor ? { cursor } : {}),
-        orderBy: { direction: AssetOrder.Desc, field: SearchOrderField.FileCreatedAt },
+        orderBy: { direction: AssetOrder.Asc, field: SearchOrderField.FileCreatedAt },
       },
     });
     scanned += response.assets.items.length;
@@ -358,8 +360,55 @@ export async function listMonthAssets(year: number, month: number): Promise<{ it
     cursor = nextCursor;
   }
 
-  items.sort((left, right) => right.localDateTime.localeCompare(left.localDateTime));
-  return { items, truncated, scanned };
+  items.sort((left, right) => left.localDateTime.localeCompare(right.localDateTime));
+  return { items, truncated, scanned, range: { from: filter.takenAt.gte, to: filter.takenAt.lte } };
+}
+
+export const OPTIMIZED_TAG_NAME = 'optimized';
+
+let cachedOptimizedTagId: string | null = null;
+
+/** The `optimized` tag if it exists; null when nothing has been compressed yet. */
+export async function findOptimizedTagId(): Promise<string | null> {
+  if (cachedOptimizedTagId) return cachedOptimizedTagId;
+  const tags = await getAllTags({});
+  const match = tags.find((tag) => tag.name.toLowerCase() === OPTIMIZED_TAG_NAME);
+  if (match) cachedOptimizedTagId = match.id;
+  return cachedOptimizedTagId;
+}
+
+/** Creates the `optimized` tag on first use; Immich upserts by name, so this is idempotent. */
+export async function ensureOptimizedTagId(): Promise<string> {
+  if (cachedOptimizedTagId) return cachedOptimizedTagId;
+  const [tag] = await upsertTags({ tagUpsertDto: { tags: [OPTIMIZED_TAG_NAME] } });
+  if (!tag) throw new Error(`Immich did not return the "${OPTIMIZED_TAG_NAME}" tag`);
+  cachedOptimizedTagId = tag.id;
+  return tag.id;
+}
+
+/** Ids of assets already carrying the `optimized` tag inside a capture range. */
+export async function listOptimizedAssetIds(from: string, to: string): Promise<Set<string>> {
+  const id = await findOptimizedTagId();
+  if (!id) return new Set();
+
+  const ids = new Set<string>();
+  let cursor: string | undefined;
+  for (;;) {
+    const response = await searchAssets({
+      metadataSearchDto: {
+        filter: { trashedAt: { eq: null }, takenAt: { gte: from, lte: to }, tagIds: { any: [id] } },
+        size: MONTH_PAGE_SIZE,
+        withExif: false,
+        ...(cursor ? { cursor } : {}),
+        orderBy: { direction: AssetOrder.Asc, field: SearchOrderField.FileCreatedAt },
+      },
+    });
+    for (const asset of response.assets.items) ids.add(asset.id);
+    const nextCursor = response.assets.nextCursor ?? null;
+    if (!nextCursor || response.assets.items.length === 0 || ids.size >= MONTH_ASSET_LIMIT) break;
+    cursor = nextCursor;
+  }
+  return ids;
 }
 
 /** Moves assets to the Immich trash. Reversible from Immich itself, unlike a forced delete. */

@@ -10,8 +10,9 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { loadConfig, type AppConfig } from './config.js';
 import { abandonBatch, advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
-import { archiveAssets, configureImmich, getMonthCounts, listAlbums, listMonthAssets, searchImages, streamThumbnail, trashAssets, type ThumbnailSize } from './immich.js';
+import { configureImmich, getMonthCounts, listAlbums, listMonthAssets, listOptimizedAssetIds, searchImages, streamThumbnail, type ThumbnailSize } from './immich.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
+import { cancelJob, enqueueJob, initializeQueue, listJobs } from './queue.js';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
 const CLIENT_DIR = join(ROOT_DIR, 'dist', 'client');
@@ -243,27 +244,41 @@ export function createApp(config: AppConfig): Hono {
     if (!Number.isInteger(year) || year < 1900 || year > 2200) throw new HttpError(400, 'year must be a four digit year');
     if (!Number.isInteger(month) || month < 1 || month > 12) throw new HttpError(400, 'month must be between 1 and 12');
     const result = await listMonthAssets(year, month);
+    const optimized = await listOptimizedAssetIds(result.range.from, result.range.to).catch(() => new Set<string>());
     return jsonResponse(context, 200, {
       year,
       month,
       truncated: result.truncated,
       items: result.items.map((asset) => ({
         ...asset,
+        optimized: optimized.has(asset.id),
         profiles: compatibleProfiles(asset).map((profile) => ({ id: profile.id, label: profile.label })),
       })),
     });
   });
 
-  app.post('/api/library/trash', async (context) => {
-    const ids = assetIdList((await readJson(context)).assetIds);
-    await trashAssets(ids);
-    return jsonResponse(context, 202, { accepted: ids.length });
+  app.post('/api/library/jobs', async (context) => {
+    const body = await readJson(context);
+    const assetIds = assetIdList(body.assetIds);
+    const kind = body.kind;
+    if (kind !== 'compress' && kind !== 'trash' && kind !== 'archive') {
+      throw new HttpError(400, 'kind must be compress, trash, or archive');
+    }
+    let profileId: string | null = null;
+    if (kind === 'compress') {
+      if (typeof body.profileId !== 'string' || !PROFILES.some((profile) => profile.id === body.profileId)) {
+        throw new HttpError(400, 'A valid profileId is required for a compression job');
+      }
+      profileId = body.profileId;
+    }
+    return jsonResponse(context, 202, enqueueJob({ kind, assetIds, profileId }));
   });
 
-  app.post('/api/library/archive', async (context) => {
-    const ids = assetIdList((await readJson(context)).assetIds);
-    await archiveAssets(ids);
-    return jsonResponse(context, 202, { accepted: ids.length });
+  app.get('/api/library/jobs', (context) => jsonResponse(context, 200, { jobs: listJobs() }));
+
+  app.delete('/api/library/jobs/:jobId', (context) => {
+    cancelJob(context.req.param('jobId'));
+    return jsonResponse(context, 202, { accepted: true });
   });
 
   app.all('/api/*', (context) => jsonResponse(context, 404, { error: 'Not found' }));
@@ -297,6 +312,7 @@ async function main(): Promise<void> {
   configureImmich(config.immichApiBaseUrl, config.immichApiKey);
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
   await initializeBatches(config.dataDir);
+  initializeQueue();
 
   const server = serve({ fetch: createApp(config).fetch, hostname: config.webHost, port: config.webPort }, (info) => {
     console.log(`Immich Web Media Optimizer listening on ${config.webHost}:${info.port}`);

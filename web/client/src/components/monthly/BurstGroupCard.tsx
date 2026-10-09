@@ -8,17 +8,20 @@ import { PhotoTile } from './PhotoTile';
 interface Props {
   group: BurstGroup;
   marks: ReadonlyMap<string, Mark>;
+  pending: ReadonlySet<string>;
   busy: boolean;
   onMark: (assetId: string, mark: Mark) => void;
   onAction: (kind: ActionKind, assetIds: string[]) => void;
 }
 
-export function BurstGroupCard({ group, marks, busy, onMark, onAction }: Props) {
+export function BurstGroupCard({ group, marks, pending, busy, onMark, onAction }: Props) {
   const keeper = suggestedKeeper(group);
-  const trashed = group.items.filter((item) => marks.get(item.id) === 'trash').map((item) => item.id);
-  const kept = group.items.filter((item) => marks.get(item.id) === 'keep');
+  const actionable = group.items.filter((item) => !pending.has(item.id));
+  const trashed = actionable.filter((item) => marks.get(item.id) === 'trash').map((item) => item.id);
+  const kept = actionable.filter((item) => marks.get(item.id) === 'keep');
   const compressible = kept.filter((item) => item.profiles.length > 0).map((item) => item.id);
   const compressSkipped = kept.length - compressible.length;
+  const waiting = group.items.length - actionable.length;
 
   return (
     <div className="rounded-xl border border-border bg-card/60 p-3">
@@ -74,6 +77,7 @@ export function BurstGroupCard({ group, marks, busy, onMark, onAction }: Props) 
         {compressSkipped > 0 ? (
           <span className="text-xs text-muted-foreground">{compressSkipped} kept file(s) have no supported compression profile</span>
         ) : null}
+        {waiting > 0 ? <span className="text-xs text-muted-foreground">{waiting} asset(s) already queued</span> : null}
       </div>
     </div>
   );

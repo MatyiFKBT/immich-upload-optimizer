@@ -5,6 +5,7 @@ import { AssetMediaStatus } from '@immich/sdk';
 import {
   copyTagsAndAlbums,
   downloadOriginal,
+  ensureOptimizedTagId,
   getAssetSnapshot,
   getAlbumIdsForAsset,
   removeOriginal,
@@ -20,9 +21,9 @@ const MAX_PARALLEL_ITEMS = 3;
 const BATCH_TTL_MS = 24 * 60 * 60 * 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-type BatchMode = 'compare' | 'batch';
-type BatchStatus = 'preparing' | 'awaiting-choice' | 'review' | 'applying' | 'complete' | 'failed' | 'expired' | 'abandoned';
-type ItemStatus = 'queued' | 'processing' | 'awaiting-choice' | 'ready' | 'applying' | 'replaced' | 'skipped' | 'failed';
+export type BatchMode = 'compare' | 'batch';
+export type BatchStatus = 'preparing' | 'awaiting-choice' | 'review' | 'applying' | 'complete' | 'failed' | 'expired' | 'abandoned';
+export type ItemStatus = 'queued' | 'processing' | 'awaiting-choice' | 'ready' | 'applying' | 'replaced' | 'skipped' | 'failed';
 export class BatchRequestError extends Error {
   constructor(readonly statusCode: number, message: string) {
     super(message);
@@ -320,8 +321,12 @@ async function replaceItem(batch: Batch, item: BatchItem, candidate: Candidate):
   }
   item.replacementId = uploaded.id;
 
-  await copyTagsAndAlbums({ newAssetId: uploaded.id, tagIds: current.tagIds, albumIds });
-  await verifyReplacement({ assetId: uploaded.id, checksum: uploaded.checksum, tagIds: current.tagIds, albumIds, livePhotoVideoId: current.livePhotoVideoId });
+  // The replacement is marked so the library can show it as already optimized. Tagging is verified
+  // with the copied tags, so a tagging failure keeps the original and retries are safe.
+  const optimizedTagId = await ensureOptimizedTagId();
+  const tagIds = [...new Set([...current.tagIds, optimizedTagId])];
+  await copyTagsAndAlbums({ newAssetId: uploaded.id, tagIds, albumIds });
+  await verifyReplacement({ assetId: uploaded.id, checksum: uploaded.checksum, tagIds, albumIds, livePhotoVideoId: current.livePhotoVideoId });
 
   if (batch.deleteOriginal) {
     await removeOriginal(item.assetId);
@@ -331,7 +336,31 @@ async function replaceItem(batch: Batch, item: BatchItem, candidate: Candidate):
   item.message = batch.deleteOriginal ? 'Replacement verified; original deleted through Immich' : 'Replacement verified; original kept';
 }
 
-export function getBatch(id: string): Record<string, unknown> | null {
+export interface BatchView {
+  id: string;
+  mode: BatchMode;
+  status: BatchStatus;
+  currentIndex: number;
+  total: number;
+  resolved: number;
+  awaiting: number;
+  busy: boolean;
+  deleteOriginal: boolean;
+  error: string | null;
+  items: {
+    assetId: string;
+    originalFileName: string;
+    originalMimeType: string | null;
+    sourceSize: number | null;
+    status: ItemStatus;
+    message: string | null;
+    replacementId: string | null;
+    originalDeleted: boolean;
+    candidates: { profileId: ProfileId; label: string; mimeType: string; filename: string; size: number | null; eligible: boolean; error: string | null }[];
+  }[];
+}
+
+export function getBatch(id: string): BatchView | null {
   const batch = batches.get(id);
   if (!batch) return null;
   return {

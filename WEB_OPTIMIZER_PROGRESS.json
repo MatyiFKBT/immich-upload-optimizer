@@ -1,8 +1,8 @@
 {
   "project": "Immich Web Media Optimizer",
-  "overall_progress_percent": 92,
-  "completed_steps": 10,
-  "total_steps": 11,
+  "overall_progress_percent": 93,
+  "completed_steps": 13,
+  "total_steps": 14,
   "updated_at": "2026-10-08",
   "steps": [
     {
@@ -76,11 +76,32 @@
       "notes": "Year grid with counts; month view loads thumbnails only and splits same-minute bursts with a suggested keeper. Left click keeps, right click trashes, each burst group has an action bar, ungrouped assets get per-asset compress/trash/archive buttons, a profile selector drives compression, and every action confirms first. Compression reuses the existing batch pipeline with delete-original on."
     },
     {
+      "id": "month-ordering",
+      "title": "Order the month oldest first with bursts and singles interleaved",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The month listing returns ascending capture order and the client builds one timeline of burst blocks and single grids, so a month reads from the 1st onwards."
+    },
+    {
+      "id": "job-queue",
+      "title": "Non-blocking FIFO job queue for library actions",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "Server-side in-memory queue runs compress/trash/archive jobs one at a time, waits for the single optimizer slot instead of failing, isolates each failure, caps history at 200 jobs, and lets a still-queued job be cancelled. The UI polls the queue, disables assets with a pending job, and no longer blocks on a job."
+    },
+    {
+      "id": "optimized-tag",
+      "title": "Tag compressed replacements as optimized and surface that in the month view",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The replacement is tagged `optimized` (upserted by name) and verified with the copied tags before any deletion; the month listing marks tagged assets via SearchFilter.tagIds and tiles show an optimized badge."
+    },
+    {
       "id": "verification",
       "title": "User runs build, tests, and deployment verification",
       "status": "pending_user",
       "progress_percent": 10,
-      "notes": "Hono server typechecks and compiles, and the Vite SPA build succeeds with no inline script/style in the emitted HTML. No runtime smoke test or Docker image build was performed; remaining validation is left to the user as requested."
+      "notes": "Hono server and Vite SPA typecheck and build cleanly. No runtime smoke test or Docker image build was performed; remaining validation is left to the user as requested."
     }
   ]
 }
