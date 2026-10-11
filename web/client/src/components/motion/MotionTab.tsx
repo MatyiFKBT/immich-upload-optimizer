@@ -289,7 +289,7 @@ export function MotionTab() {
                 <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
                 Refresh
               </Button>
-              <Button size="sm" disabled={busy || selectableCount === 0} onClick={requestAction}>
+              <Button size="sm" className="w-full sm:w-auto" disabled={busy || selectableCount === 0} onClick={requestAction}>
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <CircleSlash className="size-4" />}
                 {compressAfter ? 'Unlink, trash, compress' : 'Unlink and trash'} ({selectableCount})
               </Button>
@@ -302,7 +302,10 @@ export function MotionTab() {
             {' · jobs run one after another, so you can queue more while one is running'}
           </p>
           <p className="text-xs text-muted-foreground">
-            Click a photo to select it · Shift+click for a range · drag a box to grab several · Cmd/Ctrl+A selects all · Esc clears
+            <span className="hidden md:inline">
+              Click a photo to select it · Shift+click for a range · drag a box to grab several · Cmd/Ctrl+A selects all · Esc clears
+            </span>
+            <span className="md:hidden">Tap a photo to select it, or use “Select loaded live photos”. Tap Clear to deselect everything.</span>
           </p>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
@@ -368,16 +371,16 @@ export function MotionTab() {
                         loading="lazy"
                         decoding="async"
                         draggable={false}
-                        className="size-full object-cover"
+                        className="size-full object-contain"
                       />
-                      <label className="absolute top-2 left-2 grid size-6 place-items-center rounded-md bg-background/90">
+                      <span className="absolute top-2 left-2 grid size-7 place-items-center rounded-md bg-background/90">
                         <Checkbox
                           checked={selected.has(item.id)}
                           disabled={isPending}
                           onCheckedChange={() => toggle(item.id)}
                           aria-label={`Select ${item.originalFileName}`}
                         />
-                      </label>
+                      </span>
                       <Badge className="absolute right-2 bottom-2" variant="secondary">
                         <Film className="size-3" />
                         video
@@ -392,7 +395,7 @@ export function MotionTab() {
                       <p className="truncate text-xs font-medium" title={item.originalFileName}>
                         {item.originalFileName}
                       </p>
-                      <p className="text-[11px] text-muted-foreground tabular-nums">
+                      <p className="text-xs text-muted-foreground tabular-nums">
                         {item.localDateTime.slice(0, 16).replace('T', ' · ')} · {formatBytes(item.size)}
                       </p>
                     </div>

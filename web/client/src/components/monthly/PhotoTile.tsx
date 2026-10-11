@@ -83,7 +83,7 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
             disabled={!onKeep}
             onClick={onKeep}
           >
-            <Check className="size-4" />
+            <Check className="hidden size-4 sm:block" />
             Keep
           </Button>
           <Button
@@ -96,13 +96,13 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
             disabled={!onTrash}
             onClick={onTrash}
           >
-            <Trash2 className="size-4" />
+            <Trash2 className="hidden size-4 sm:block" />
             Trash
           </Button>
         </div>
       ) : null}
 
-      {footer ? <div className="mt-auto flex justify-center gap-1">{footer}</div> : null}
+      {footer ? <div className="mt-auto flex flex-wrap justify-center gap-1">{footer}</div> : null}
     </div>
   );
 }

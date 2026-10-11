@@ -55,7 +55,7 @@ function CompareItem({ item, index, total, onDecide }: { item: BatchItem; index:
           alt={item.originalFileName}
           loading="lazy"
           decoding="async"
-          className="aspect-4/3 w-full rounded-lg object-cover"
+          className="aspect-4/3 w-full rounded-lg object-contain"
         />
         <div className="space-y-2">
           {item.candidates.map((candidate) => {
@@ -84,6 +84,7 @@ function CompareItem({ item, index, total, onDecide }: { item: BatchItem; index:
                 <Button
                   variant={isBest ? 'default' : 'outline'}
                   size="sm"
+                  className="w-full sm:w-auto"
                   disabled={!candidate.eligible}
                   onClick={() => onDecide(item.assetId, candidate.profileId)}
                 >

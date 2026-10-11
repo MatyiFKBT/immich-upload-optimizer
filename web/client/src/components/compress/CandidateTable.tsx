@@ -62,7 +62,7 @@ export function CandidateTable({ batch, applySelection, onToggleApplyItem }: Pro
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-border text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+          <tr className="border-b border-border text-xs font-semibold tracking-wider text-muted-foreground uppercase">
             <th className="p-2">Apply</th>
             <th className="p-2">Image</th>
             <th className="p-2">Original</th>

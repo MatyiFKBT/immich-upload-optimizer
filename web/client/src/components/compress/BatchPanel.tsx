@@ -58,7 +58,7 @@ export function BatchPanel({ batch, message, applySelection, onDecide, onToggleA
           Candidates are ready. Uncheck any image you want to leave unchanged, then explicitly apply the selected replacements.
         </p>
         <CandidateTable batch={batch} applySelection={applySelection} onToggleApplyItem={onToggleApplyItem} />
-        <Button onClick={onApply}>Apply selected replacements</Button>
+        <Button className="w-full sm:w-auto" onClick={onApply}>Apply selected replacements</Button>
       </>
     );
   } else {

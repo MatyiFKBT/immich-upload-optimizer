@@ -70,7 +70,7 @@ export function ProfilesPanel({
               </span>
             </span>
           </label>
-          <Button disabled={!canStart} onClick={onStart}>
+          <Button className="w-full sm:w-auto" disabled={!canStart} onClick={onStart}>
             {startLabel}
           </Button>
         </div>

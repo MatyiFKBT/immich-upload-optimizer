@@ -54,7 +54,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
         <Button
           variant="destructive"
           size="sm"
-          className="h-9 flex-1 sm:h-8 sm:flex-none"
+          className="h-9 grow basis-[7rem] sm:h-8 sm:flex-none"
           disabled={busy || trashed.length === 0}
           onClick={() => onAction('trash', trashed)}
         >
@@ -64,7 +64,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
         <Button
           variant="outline"
           size="sm"
-          className="h-9 flex-1 sm:h-8 sm:flex-none"
+          className="h-9 grow basis-[7rem] sm:h-8 sm:flex-none"
           disabled={busy || compressible.length === 0}
           onClick={() => onAction('compress', compressible)}
         >
@@ -74,7 +74,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
         <Button
           variant="outline"
           size="sm"
-          className="h-9 flex-1 sm:h-8 sm:flex-none"
+          className="h-9 grow basis-[7rem] sm:h-8 sm:flex-none"
           disabled={busy || kept.length === 0}
           onClick={() => onAction('archive', kept.map((item) => item.id))}
         >
