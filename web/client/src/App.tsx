@@ -36,11 +36,11 @@ export function App() {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold tracking-widest text-primary uppercase">Immich tool</p>
-          <h1 className="text-3xl font-semibold tracking-tight">Media optimizer</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Media optimizer</h1>
           <p className="text-sm text-muted-foreground">Compare smaller versions, keep the library tidy month by month, and drop live-photo videos.</p>
         </div>
         <span
@@ -58,18 +58,20 @@ export function App() {
       {loadError ? <p className="mb-4 text-sm text-destructive">{loadError}</p> : null}
 
       <Tabs defaultValue="compress" className="gap-6">
-        <TabsList>
-          <TabsTrigger value="compress">
+        <TabsList className="w-full sm:w-fit">
+          <TabsTrigger value="compress" className="text-xs sm:text-sm">
             <Minimize2 />
             Compress
           </TabsTrigger>
-          <TabsTrigger value="monthly">
+          <TabsTrigger value="monthly" className="text-xs sm:text-sm">
             <CalendarDays />
-            Monthly cleanup
+            <span className="sm:hidden">Cleanup</span>
+            <span className="hidden sm:inline">Monthly cleanup</span>
           </TabsTrigger>
-          <TabsTrigger value="motion">
+          <TabsTrigger value="motion" className="text-xs sm:text-sm">
             <Film />
-            Live photos
+            <span className="sm:hidden">Live</span>
+            <span className="hidden sm:inline">Live photos</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="compress">

@@ -65,7 +65,7 @@ export function JobQueuePanel({ jobs, error, onCancel }: Props) {
             <div className="flex shrink-0 items-center gap-2">
               <Badge variant={job.status === 'failed' ? 'destructive' : 'secondary'}>{STATUS_LABEL[job.status]}</Badge>
               {job.status === 'queued' ? (
-                <Button variant="ghost" size="icon" className="size-7" aria-label="Cancel this queued job" onClick={() => onCancel(job.id)}>
+                <Button variant="ghost" size="icon" className="size-9 sm:size-7" aria-label="Cancel this queued job" onClick={() => onCancel(job.id)}>
                   <X className="size-4" />
                 </Button>
               ) : null}

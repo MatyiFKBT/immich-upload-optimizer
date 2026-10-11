@@ -59,7 +59,7 @@ export function MonthView({
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
           <div className="flex items-start gap-3">
             <Button variant="outline" size="icon" aria-label="Back to the year" onClick={onBack}>
               <ArrowLeft />
@@ -76,16 +76,16 @@ export function MonthView({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {busy ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
             {promptsHidden ? (
               <Button variant="ghost" size="sm" onClick={onResetPrompts}>
                 Re-enable prompts
               </Button>
             ) : null}
-            <span className="text-sm text-muted-foreground">Compression profile</span>
+            <span className="hidden text-sm text-muted-foreground sm:inline">Compression profile</span>
             <Select value={profileId} onValueChange={onProfileChange}>
-              <SelectTrigger className="w-56">
+              <SelectTrigger className="w-full sm:w-56" aria-label="Compression profile">
                 <SelectValue placeholder="Choose a profile" />
               </SelectTrigger>
               <SelectContent>

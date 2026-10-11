@@ -47,7 +47,7 @@ export function ActionConfirm({ pending, onCancel, onConfirm }: Props) {
           <AlertDialogTitle>{pending?.title ?? ''}</AlertDialogTitle>
           <AlertDialogDescription>{pending?.description ?? ''}</AlertDialogDescription>
         </AlertDialogHeader>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <label className="flex items-center gap-2.5 py-2.5 text-xs text-muted-foreground">
           <Checkbox checked={remember} onCheckedChange={(checked) => setRemember(checked === true)} />
           Don&apos;t ask again for {pending ? KIND_LABEL[pending.kind] : ''} actions
         </label>

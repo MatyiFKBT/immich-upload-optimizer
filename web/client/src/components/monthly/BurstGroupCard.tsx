@@ -31,7 +31,10 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
           <Badge variant="outline">{group.items.length} in this burst</Badge>
           <span className="text-xs text-muted-foreground tabular-nums">{formatGroupTime(group.key)}</span>
         </div>
-        <p className="text-xs text-muted-foreground">Left click keeps · right click trashes</p>
+        <p className="text-xs text-muted-foreground">
+          <span className="hidden md:inline">Left click keeps · right click trashes · or use the buttons on each image</span>
+          <span className="md:hidden">Tap Keep or Trash on each image</span>
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -41,8 +44,8 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
             asset={item}
             mark={marks.get(item.id)}
             suggested={item.id === keeper}
-            onKeep={() => onMark(item.id, 'keep')}
-            onTrash={() => onMark(item.id, 'trash')}
+            onKeep={pending.has(item.id) ? undefined : () => onMark(item.id, 'keep')}
+            onTrash={pending.has(item.id) ? undefined : () => onMark(item.id, 'trash')}
           />
         ))}
       </div>
@@ -51,6 +54,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
         <Button
           variant="destructive"
           size="sm"
+          className="h-9 flex-1 sm:h-8 sm:flex-none"
           disabled={busy || trashed.length === 0}
           onClick={() => onAction('trash', trashed)}
         >
@@ -60,6 +64,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
         <Button
           variant="outline"
           size="sm"
+          className="h-9 flex-1 sm:h-8 sm:flex-none"
           disabled={busy || compressible.length === 0}
           onClick={() => onAction('compress', compressible)}
         >
@@ -69,6 +74,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
         <Button
           variant="outline"
           size="sm"
+          className="h-9 flex-1 sm:h-8 sm:flex-none"
           disabled={busy || kept.length === 0}
           onClick={() => onAction('archive', kept.map((item) => item.id))}
         >

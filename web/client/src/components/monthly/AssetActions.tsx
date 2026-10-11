@@ -25,7 +25,7 @@ export function AssetActions({ disabled, compressible, onCompress, onTrash, onAr
             <Button
               variant="outline"
               size="icon"
-              className="size-8"
+              className="size-10 sm:size-8"
               disabled={disabled || !action.enabled}
               aria-label={action.label}
               onClick={action.onClick}

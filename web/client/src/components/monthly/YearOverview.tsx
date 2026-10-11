@@ -23,7 +23,7 @@ export function YearOverview({ year, counts, loading, error, onYearChange, onOpe
             {counts ? `${counts.total} captures · pick a month to review it` : 'Loading captures…'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" size="icon" aria-label="Previous year" onClick={() => onYearChange(year - 1)}>
             <ChevronLeft />
           </Button>
@@ -52,7 +52,7 @@ export function YearOverview({ year, counts, loading, error, onYearChange, onOpe
                 type="button"
                 disabled={count === 0}
                 onClick={() => onOpenMonth(month)}
-                className="flex h-28 flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/60 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                className="flex h-24 flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/60 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45 sm:h-28"
               >
                 <span className="text-sm font-semibold">{name}</span>
                 <span className="flex items-center gap-2 text-2xl font-semibold tabular-nums">
