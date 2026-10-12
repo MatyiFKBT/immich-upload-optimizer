@@ -11,6 +11,7 @@ import {
   getAssetThumbnailPath,
   getAllTags,
   getMyCalendarHeatmap,
+  getPeopleThumbnailPath,
   init,
   searchAssets,
   updateAsset,
@@ -217,6 +218,15 @@ export async function streamThumbnail(id: string, size: ThumbnailSize = 'thumbna
   });
 }
 
+/** The cropped face Immich stores for a person, used by the month view's face row. */
+export async function streamPersonThumbnail(personId: string): Promise<Response> {
+  return fetch(`${apiBaseUrl}${getPeopleThumbnailPath(personId)}`, {
+    headers: { 'x-api-key': apiKey },
+    redirect: 'error',
+    signal: AbortSignal.timeout(30_000),
+  });
+}
+
 export async function sha1Base64(filePath: string): Promise<string> {
   const hash = createHash('sha1');
   for await (const chunk of createReadStream(filePath)) hash.update(chunk as Buffer);
@@ -304,6 +314,11 @@ export interface MonthCount {
   count: number;
 }
 
+export interface AssetPerson {
+  id: string;
+  name: string;
+}
+
 export interface LibraryAsset {
   id: string;
   originalFileName: string;
@@ -313,6 +328,8 @@ export interface LibraryAsset {
   size: number | null;
   isVideo: boolean;
   visibility: AssetVisibility;
+  /** Recognized, named people in the asset; unnamed or hidden clusters are left out. */
+  people: AssetPerson[];
 }
 
 const MONTH_ASSET_LIMIT = 3000;
@@ -360,6 +377,7 @@ export async function listMonthAssets(year: number, month: number): Promise<{ it
         filter,
         size: MONTH_PAGE_SIZE,
         withExif: true,
+        withPeople: true,
         ...(cursor ? { cursor } : {}),
         orderBy: { direction: AssetOrder.Asc, field: SearchOrderField.FileCreatedAt },
       },
@@ -377,6 +395,11 @@ export async function listMonthAssets(year: number, month: number): Promise<{ it
         size: asset.exifInfo?.fileSizeInByte ?? null,
         isVideo: asset.type === AssetTypeEnum.Video,
         visibility: asset.visibility,
+        // Immich returns face clusters without a name for people nobody has labelled yet, and hidden
+        // people on request; neither is worth a face in the tile.
+        people: (asset.people ?? []).flatMap((person) =>
+          person.isHidden || person.name.trim() === '' ? [] : [{ id: person.id, name: person.name }],
+        ),
       });
       if (items.length >= MONTH_ASSET_LIMIT) {
         truncated = true;

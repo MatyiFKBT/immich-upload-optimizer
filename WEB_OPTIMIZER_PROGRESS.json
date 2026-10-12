@@ -1,9 +1,9 @@
 {
   "project": "Immich Web Media Optimizer",
-  "overall_progress_percent": 94,
-  "completed_steps": 16,
-  "total_steps": 17,
-  "updated_at": "2026-10-09",
+  "overall_progress_percent": 95,
+  "completed_steps": 20,
+  "total_steps": 21,
+  "updated_at": "2026-10-12",
   "steps": [
     {
       "id": "plan-and-tracker",
@@ -118,11 +118,39 @@
       "notes": "Motion links are validated (different id, untrashed video) before unlinking or trashing, a replacement must be readable back from Immich with exactly the uploaded byte count before any original is removed, and a compression run that is still applying is reported as such instead of failed. Note the upstream release.yaml still pins action versions whose runners GitHub has removed."
     },
     {
+      "id": "optimistic-month-actions",
+      "title": "Hide queued assets from the month view immediately",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The cleanup tab drops the assets of an archive, trash, or compression job from the grid the moment the job is queued and puts back anything the job did not settle, so the month only shows unhandled assets."
+    },
+    {
+      "id": "extra-tag-buttons",
+      "title": "Operator-defined tag-and-archive buttons from EXTRA_BUTTONS",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "EXTRA_BUTTONS parses comma-separated label:lucide-icon pairs at startup, exposes them through GET /api/config, and queues a tagArchive job that tags each asset with its label and only archives after Immich confirms the tag count. The server rejects any tag that no configured button declares."
+    },
+    {
+      "id": "open-in-immich",
+      "title": "Open an asset in Immich from its thumbnail",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "Month view thumbnails link to https://my.immich.app/photos/<id>, the link helper that redirects to the user's own instance; marking stays on the Keep and Trash buttons and the desktop right click."
+    },
+    {
+      "id": "month-faces",
+      "title": "Recognized faces under each asset in the month view",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The month listing requests withPeople, keeps named visible people, and each tile shows up to four face thumbnails served through the new /api/people/{id}/thumbnail proxy, each linking to https://my.immich.app/people/<id>. Requires the person.read permission."
+    },
+    {
       "id": "verification",
       "title": "User runs build, tests, and deployment verification",
       "status": "pending_user",
       "progress_percent": 10,
-      "notes": "Hono server and Vite SPA typecheck and build cleanly; the workflow passes actionlint. No runtime smoke test, no Docker image build and no live-Immich verification was performed by the assistant; that validation is the user's."
+      "notes": "Hono server and Vite SPA typecheck and build cleanly; the workflow passes actionlint. No runtime smoke test, no Docker image build and no live-Immich verification was performed by the assistant; that validation is the user's, including for the optimistic month actions, EXTRA_BUTTONS, click-to-open, and the face row."
     }
   ]
 }

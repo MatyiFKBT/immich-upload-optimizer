@@ -74,6 +74,10 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 15. Tag compressed replacements `optimized` and surface that in the month view.
 16. Add the GitHub Actions workflow that builds and publishes the web image to GHCR.
 17. Harden the destructive paths: validate motion links before acting on them, verify a replacement is readable back at the uploaded size before removing any original, and report an interrupted run as still applying instead of failed.
+18. Hide queued assets from the month view immediately and restore the ones a job could not settle.
+19. Add operator-defined tag-and-archive buttons through `EXTRA_BUTTONS`, validated on the server and applied through the job queue.
+20. Open an asset in the user's own Immich from its thumbnail, through Immich's link helper.
+21. Show the recognized, named people under each asset in the month view and link each face to that person's Immich page.
 
 ## Safety invariants
 
@@ -102,3 +106,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Library actions are queued and run one after another, so a user can start many without waiting for any one to finish, and a queued job can be cancelled.
 - A replacement carries the `optimized` tag and the month view marks assets that already have it.
 - A push to `web-ui` publishes a pullable web image to GHCR tagged with the commit hash.
+- Queuing an archive, trash, or compression removes its assets from the month immediately, and an asset the job could not settle returns to the grid.
+- Buttons defined in `EXTRA_BUTTONS` tag the selected assets with their label and archive them, a tag that no configured button declares is rejected, and the assets only leave the timeline after Immich confirms the tag was applied.
+- Clicking a thumbnail opens that asset in the user's own Immich through the link helper.
+- Each asset in the month view lists the people Immich recognized in it, and clicking a face opens that person's Immich page.

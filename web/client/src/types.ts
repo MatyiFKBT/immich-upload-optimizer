@@ -113,6 +113,12 @@ export interface MotionPhotos {
   total: number;
 }
 
+/** A recognized person in an asset, as Immich reports them next to the asset's faces. */
+export interface PersonSummary {
+  id: string;
+  name: string;
+}
+
 export interface LibraryAsset {
   id: string;
   originalFileName: string;
@@ -124,6 +130,7 @@ export interface LibraryAsset {
   visibility: AssetVisibility;
   /** Carries the `optimized` tag, i.e. a smaller replacement was already uploaded for it. */
   optimized: boolean;
+  people: PersonSummary[];
   profiles: AssetProfile[];
 }
 

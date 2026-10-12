@@ -10,7 +10,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { loadConfig, type AppConfig } from './config.js';
 import { abandonBatch, advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
-import { configureImmich, getMonthCounts, listAlbums, listMonthAssets, listMotionPhotos, listOptimizedAssetIds, searchImages, streamThumbnail, type ThumbnailSize } from './immich.js';
+import { configureImmich, getMonthCounts, listAlbums, listMonthAssets, listMotionPhotos, listOptimizedAssetIds, searchImages, streamPersonThumbnail, streamThumbnail, type ThumbnailSize } from './immich.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
 import { cancelJob, enqueueJob, initializeQueue, listJobs } from './queue.js';
 
@@ -227,6 +227,18 @@ export function createApp(config: AppConfig): Hono {
     }
     const upstream = await streamThumbnail(assetId, (requestedSize ?? 'thumbnail') as ThumbnailSize);
     if (!upstream.ok || !upstream.body) throw new HttpError(upstream.status || 502, 'Unable to retrieve Immich thumbnail');
+    return context.body(upstream.body as ReadableStream, 200, {
+      'content-type': upstream.headers.get('content-type') ?? 'image/jpeg',
+      'cache-control': 'private, max-age=300',
+      'x-content-type-options': 'nosniff',
+    });
+  });
+
+  app.get('/api/people/:personId/thumbnail', async (context) => {
+    const personId = context.req.param('personId');
+    if (!ASSET_ID_PATTERN.test(personId)) throw new HttpError(404, 'Not found');
+    const upstream = await streamPersonThumbnail(personId);
+    if (!upstream.ok || !upstream.body) throw new HttpError(upstream.status || 502, 'Unable to retrieve the Immich face thumbnail');
     return context.body(upstream.body as ReadableStream, 200, {
       'content-type': upstream.headers.get('content-type') ?? 'image/jpeg',
       'cache-control': 'private, max-age=300',

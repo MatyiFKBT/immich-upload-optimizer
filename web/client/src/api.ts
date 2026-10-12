@@ -25,6 +25,11 @@ export function thumbnailUrl(assetId: string, size: 'thumbnail' | 'preview' = 't
   return `/api/assets/${encodeURIComponent(assetId)}/thumbnail?size=${size}`;
 }
 
+/** The cropped face Immich stores for a person, proxied so the browser never holds an API key. */
+export function personThumbnailUrl(personId: string): string {
+  return `/api/people/${encodeURIComponent(personId)}/thumbnail`;
+}
+
 export const api = {
   profiles: () => request<{ profiles: ProfileOption[] }>('/api/profiles'),
   config: () => request<{ extraButtons: ExtraButton[] }>('/api/config'),
