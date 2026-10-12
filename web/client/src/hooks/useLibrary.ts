@@ -71,5 +71,19 @@ export function useMonthAssets(year: number | null, month: number | null) {
     setAssets((previous) => previous.filter((asset) => !removed.has(asset.id)));
   }, []);
 
-  return { assets, truncated, loading, error, remove };
+  /**
+   * Puts optimistically hidden assets back after a job could not settle them, keeping the month in
+   * capture order. Assets already present are never duplicated.
+   */
+  const restore = useCallback((items: readonly LibraryAsset[]) => {
+    if (items.length === 0) return;
+    setAssets((previous) => {
+      const known = new Set(previous.map((asset) => asset.id));
+      const missing = items.filter((item) => !known.has(item.id));
+      if (missing.length === 0) return previous;
+      return [...previous, ...missing].sort((left, right) => left.localDateTime.localeCompare(right.localDateTime));
+    });
+  }, []);
+
+  return { assets, truncated, loading, error, remove, restore };
 }

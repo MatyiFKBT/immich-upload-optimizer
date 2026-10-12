@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/api';
 import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionConfirm';
 import { JobQueuePanel } from '@/components/monthly/JobQueuePanel';
@@ -9,7 +9,7 @@ import { useJobs } from '@/hooks/useJobs';
 import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { useMonthAssets, useMonthCounts } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
-import type { ActionKind, Job, ProfileOption } from '@/types';
+import type { ActionKind, Job, LibraryAsset, ProfileOption } from '@/types';
 
 interface Props {
   profiles: ProfileOption[];
@@ -51,14 +51,27 @@ export function MonthlyTab({ profiles }: Props) {
   const [promptsHidden, setPromptsHidden] = useState(() => CONFIRM_KINDS.some((kind) => isConfirmationHidden(kind)));
 
   const { counts, loading: countsLoading, error: countsError } = useMonthCounts(year);
-  const { assets, truncated, loading, error, remove } = useMonthAssets(year, month);
+  const { assets, truncated, loading, error, remove, restore } = useMonthAssets(year, month);
+  /** Assets hidden the moment an action was queued, so a job that cannot settle them puts them back. */
+  const queuedSnapshots = useRef(new Map<string, LibraryAsset>());
 
   const handleSettled = useCallback(
     (job: Job) => {
       const kind = job.kind;
       if (kind === 'motion') return; // the live-photo tab owns its own jobs
-      const affected = job.resolvedIds.length > 0 ? job.resolvedIds : job.assetIds;
+      // `resolvedIds` holds exactly the assets the job settled (replaced, trashed, archived, or a
+      // deliberate skip); anything else it was given is still in the library and comes back.
+      const affected = job.resolvedIds;
+      const settled = new Set(affected);
+      const unsettled: LibraryAsset[] = [];
+      for (const assetId of job.assetIds) {
+        const snapshot = queuedSnapshots.current.get(assetId);
+        if (!snapshot) continue;
+        queuedSnapshots.current.delete(assetId);
+        if (!settled.has(assetId)) unsettled.push(snapshot);
+      }
       remove(affected);
+      restore(unsettled);
       setMarks((previous) => {
         const next = new Map(previous);
         for (const id of affected) next.delete(id);
@@ -72,13 +85,15 @@ export function MonthlyTab({ profiles }: Props) {
         toast.success(job.message ?? `${KIND_LABEL[kind]} finished`);
       }
     },
-    [remove],
+    [remove, restore],
   );
 
   const { jobs, error: jobsError, refresh: refreshJobs } = useJobs(handleSettled);
 
   useEffect(() => {
     setMarks(new Map());
+    // A reloaded month starts from Immich again, so snapshots from the previous month are stale.
+    queuedSnapshots.current.clear();
   }, [year, month]);
 
   const activeProfileId = profileId || profiles[0]?.id || '';
@@ -106,12 +121,20 @@ export function MonthlyTab({ profiles }: Props) {
       toast.error('Choose a compression profile first');
       return;
     }
+    // The queued job is the only thing that will touch these assets, so hide them right away instead
+    // of showing a month that still contains them until the queue gets around to reporting back.
+    const requested = new Set(assetIds);
+    const hidden = assets.filter((asset) => requested.has(asset.id));
+    for (const asset of hidden) queuedSnapshots.current.set(asset.id, asset);
+    remove(assetIds);
     setBusy(true);
     try {
       await api.enqueueJob({ kind, assetIds, profileId: kind === 'compress' ? activeProfileId : null });
       toast.success(`${KIND_LABEL[kind]} queued · ${assetIds.length} asset(s)`);
       refreshJobs();
     } catch (caught) {
+      for (const asset of hidden) queuedSnapshots.current.delete(asset.id);
+      restore(hidden);
       toast.error(caught instanceof Error ? caught.message : 'Unable to queue the job');
     } finally {
       setBusy(false);
