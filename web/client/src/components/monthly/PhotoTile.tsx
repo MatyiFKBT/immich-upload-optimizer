@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { thumbnailUrl } from '@/api';
 import { formatBytes } from '@/lib/format';
+import { assetLink } from '@/lib/immichLinks';
 import { cn } from '@/lib/utils';
 import type { Mark } from '@/lib/bursts';
 import type { LibraryAsset } from '@/types';
@@ -32,17 +33,17 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
         mark === undefined && 'border-border',
       )}
     >
-      <button
-        type="button"
-        disabled={!interactive}
-        onClick={onKeep}
+      <a
+        href={assetLink(asset.id)}
+        target="_blank"
+        rel="noreferrer"
+        title={`Open ${asset.originalFileName} in Immich`}
+        className="relative block w-full overflow-hidden rounded-lg bg-muted focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
         onContextMenu={(event) => {
           if (!onTrash || !finePointer) return;
           event.preventDefault();
           onTrash();
         }}
-        title={interactive ? (finePointer ? 'Left click to keep · right click to trash' : 'Use Keep or Trash below') : asset.originalFileName}
-        className="relative block w-full overflow-hidden rounded-lg bg-muted"
       >
         <img src={thumbnailUrl(asset.id)} alt={asset.originalFileName} loading="lazy" decoding="async" className="aspect-4/3 w-full object-contain" />
         {mark === 'trash' ? <span className="absolute inset-0 bg-destructive/35" /> : null}
@@ -60,7 +61,7 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
         {asset.optimized ? (
           <Badge className="absolute bottom-2 left-2 bg-success text-success-foreground">optimized</Badge>
         ) : null}
-      </button>
+      </a>
 
       <div className="min-w-0 px-1">
         <p className="truncate text-xs font-medium" title={asset.originalFileName}>

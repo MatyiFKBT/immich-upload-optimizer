@@ -102,8 +102,8 @@ export function MonthView({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Ordered from the 1st. Bursts share a capture minute and keep their own action bar; single images carry their own buttons.
-          Actions are queued and run one after another, so you can keep working.
+          Ordered from the 1st. Bursts share a capture minute and keep their own action bar; single images carry their own buttons. Click an
+          image to open it in Immich. Actions are queued and run one after another, so you can keep working.
         </p>
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}

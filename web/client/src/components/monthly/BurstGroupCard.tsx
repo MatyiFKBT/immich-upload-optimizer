@@ -34,8 +34,8 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, extraBu
           <span className="text-xs text-muted-foreground tabular-nums">{formatGroupTime(group.key)}</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          <span className="hidden md:inline">Left click keeps · right click trashes · or use the buttons on each image</span>
-          <span className="md:hidden">Tap Keep or Trash on each image</span>
+          <span className="hidden md:inline">Click an image to open it in Immich · Keep or Trash marks it (right click also trashes)</span>
+          <span className="md:hidden">Tap an image to open it in Immich · Keep or Trash marks it</span>
         </p>
       </div>
 
