@@ -1,8 +1,8 @@
 {
   "project": "Immich Web Media Optimizer",
-  "overall_progress_percent": 95,
-  "completed_steps": 20,
-  "total_steps": 21,
+  "overall_progress_percent": 96,
+  "completed_steps": 21,
+  "total_steps": 22,
   "updated_at": "2026-10-12",
   "steps": [
     {
@@ -146,11 +146,18 @@
       "notes": "The month listing requests withPeople, keeps named visible people, and each tile shows up to four face thumbnails served through the new /api/people/{id}/thumbnail proxy, each linking to https://my.immich.app/people/<id>. Requires the person.read permission."
     },
     {
+      "id": "optional-auth",
+      "title": "Allow disabling the built-in HTTP Basic auth",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "WEB_AUTH_DISABLED=true skips the Basic-auth middleware and the password requirement so a proxy (Pocket ID behind oauth2-proxy, Authelia, forward auth) can authenticate callers. Only true/false are accepted; the flag is reported through GET /api/config and as a header banner, and main() logs a warning that every request is unauthenticated. Cross-origin write checks still apply."
+    },
+    {
       "id": "verification",
       "title": "User runs build, tests, and deployment verification",
       "status": "pending_user",
       "progress_percent": 10,
-      "notes": "Hono server and Vite SPA typecheck and build cleanly; the workflow passes actionlint. No runtime smoke test, no Docker image build and no live-Immich verification was performed by the assistant; that validation is the user's, including for the optimistic month actions, EXTRA_BUTTONS, click-to-open, and the face row."
+      "notes": "Hono server and Vite SPA typecheck and build cleanly; the workflow passes actionlint. No runtime smoke test, no Docker image build and no live-Immich verification was performed by the assistant; that validation is the user's, including for the optimistic month actions, EXTRA_BUTTONS, click-to-open, the face row, and the unauthenticated mode."
     }
   ]
 }

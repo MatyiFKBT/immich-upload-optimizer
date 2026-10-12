@@ -32,7 +32,7 @@ export function personThumbnailUrl(personId: string): string {
 
 export const api = {
   profiles: () => request<{ profiles: ProfileOption[] }>('/api/profiles'),
-  config: () => request<{ extraButtons: ExtraButton[] }>('/api/config'),
+  config: () => request<{ extraButtons: ExtraButton[]; authDisabled: boolean }>('/api/config'),
   albums: () => request<{ albums: Album[] }>('/api/albums'),
   search: (filters: SearchFilters) => request<SearchResult>('/api/search', { method: 'POST', body: filters }),
   createBatch: (body: { assetIds: string[]; profileIds: string[]; deleteOriginal: boolean }) =>

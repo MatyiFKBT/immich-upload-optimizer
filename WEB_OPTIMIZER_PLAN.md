@@ -78,6 +78,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 19. Add operator-defined tag-and-archive buttons through `EXTRA_BUTTONS`, validated on the server and applied through the job queue.
 20. Open an asset in the user's own Immich from its thumbnail, through Immich's link helper.
 21. Show the recognized, named people under each asset in the month view and link each face to that person's Immich page.
+22. Let `WEB_AUTH_DISABLED=true` drop the built-in Basic auth for deployments that authenticate callers in front of the service, with a startup warning, an ignored password requirement, and a visible banner in the UI.
 
 ## Safety invariants
 
@@ -110,3 +111,4 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Buttons defined in `EXTRA_BUTTONS` tag the selected assets with their label and archive them, a tag that no configured button declares is rejected, and the assets only leave the timeline after Immich confirms the tag was applied.
 - Clicking a thumbnail opens that asset in the user's own Immich through the link helper.
 - Each asset in the month view lists the people Immich recognized in it, and clicking a face opens that person's Immich page.
+- `WEB_AUTH_DISABLED=true` serves the UI and API without the Basic-auth challenge, needs no password, reports the mode in `/api/config` and the UI header, and logs a warning that the service is unauthenticated; any other value stops the container.

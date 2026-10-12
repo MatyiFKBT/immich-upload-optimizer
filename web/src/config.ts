@@ -12,7 +12,10 @@ export interface AppConfig {
   immichApiBaseUrl: string;
   immichOriginAndPrefix: string;
   immichApiKey: string;
+  /** Basic auth password; empty when `WEB_AUTH_DISABLED` is set. */
   webPassword: string;
+  /** True when something else (a reverse proxy, Pocket ID, …) is expected to authenticate callers. */
+  authDisabled: boolean;
   webHost: string;
   webPort: number;
   dataDir: string;
@@ -22,6 +25,16 @@ export interface AppConfig {
 const MAX_EXTRA_BUTTONS = 8;
 const MAX_BUTTON_LABEL_LENGTH = 48;
 const BUTTON_ICON_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i;
+
+/** Strict `true`/`false` parsing, so a typo fails at startup instead of flipping a switch silently. */
+function parseBoolean(name: string, raw: string | undefined): boolean {
+  if (raw === undefined || raw.trim() === '') return false;
+  const value = raw.trim().toLowerCase();
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${name} must be true or false`);
+}
+
 
 /**
  * `EXTRA_BUTTONS` is a comma-separated list of `label:lucide-icon` pairs, for example
@@ -89,10 +102,15 @@ function normalizeImmichUrl(raw: string): { apiBaseUrl: string; originAndPrefix:
 export async function loadConfig(): Promise<AppConfig> {
   const immichUrl = process.env.IMMICH_URL ?? '';
   const immichApiKey = await readSecret('IMMICH_API_KEY');
-  const webPassword = await readSecret('WEB_PASSWORD');
+  const authDisabled = parseBoolean('WEB_AUTH_DISABLED', process.env.WEB_AUTH_DISABLED);
+  // With authentication delegated elsewhere the password is neither needed nor read, so a leftover
+  // secret file cannot keep the container from starting.
+  const webPassword = authDisabled ? '' : await readSecret('WEB_PASSWORD');
   if (!immichUrl) throw new Error('IMMICH_URL is required');
   if (!immichApiKey) throw new Error('IMMICH_API_KEY or IMMICH_API_KEY_FILE is required');
-  if (webPassword.length < 12) throw new Error('WEB_PASSWORD or WEB_PASSWORD_FILE must contain at least 12 characters');
+  if (!authDisabled && webPassword.length < 12) {
+    throw new Error('WEB_PASSWORD or WEB_PASSWORD_FILE must contain at least 12 characters');
+  }
 
   const { apiBaseUrl, originAndPrefix } = normalizeImmichUrl(immichUrl);
   const webPort = Number(process.env.WEB_PORT ?? '3000');
@@ -106,6 +124,7 @@ export async function loadConfig(): Promise<AppConfig> {
     immichOriginAndPrefix: originAndPrefix,
     immichApiKey,
     webPassword,
+    authDisabled,
     webHost: process.env.WEB_HOST ?? '0.0.0.0',
     webPort,
     dataDir: process.env.WEB_DATA_DIR ?? '/data',

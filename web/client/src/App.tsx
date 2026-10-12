@@ -13,6 +13,7 @@ export function App() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [extraButtons, setExtraButtons] = useState<ExtraButton[]>([]);
+  const [authDisabled, setAuthDisabled] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState('');
 
@@ -25,6 +26,7 @@ export function App() {
         setAlbums(albumResponse.albums);
         setProfiles(profileResponse.profiles);
         setExtraButtons(configResponse.extraButtons);
+        setAuthDisabled(configResponse.authDisabled);
         setConnected(true);
       } catch (error) {
         if (cancelled) return;
@@ -45,16 +47,26 @@ export function App() {
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Media optimizer</h1>
           <p className="text-sm text-muted-foreground">Compare smaller versions, keep the library tidy month by month, and drop live-photo videos.</p>
         </div>
-        <span
-          className={cn(
-            'rounded-full border px-3 py-1.5 text-xs font-medium',
-            connected === null && 'text-muted-foreground',
-            connected === true && 'border-success/40 text-success',
-            connected === false && 'border-destructive/40 text-destructive',
-          )}
-        >
-          {connected === null ? 'Connecting…' : connected ? 'Connected to Immich' : 'Connection failed'}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {authDisabled ? (
+            <span
+              className="rounded-full border border-destructive/40 px-3 py-1.5 text-xs font-medium text-destructive"
+              title="WEB_AUTH_DISABLED is set: this service does not authenticate callers. Protect it with your own proxy."
+            >
+              No authentication
+            </span>
+          ) : null}
+          <span
+            className={cn(
+              'rounded-full border px-3 py-1.5 text-xs font-medium',
+              connected === null && 'text-muted-foreground',
+              connected === true && 'border-success/40 text-success',
+              connected === false && 'border-destructive/40 text-destructive',
+            )}
+          >
+            {connected === null ? 'Connecting…' : connected ? 'Connected to Immich' : 'Connection failed'}
+          </span>
+        </div>
       </header>
 
       {loadError ? <p className="mb-4 text-sm text-destructive">{loadError}</p> : null}

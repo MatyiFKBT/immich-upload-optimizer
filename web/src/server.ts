@@ -118,16 +118,20 @@ export function createApp(config: AppConfig): Hono {
 
   app.get('/healthz', (context) => jsonResponse(context, 200, { status: 'ok' }));
 
-  app.use('*', async (context, next) => {
-    if (!isAuthenticated(context.req.header('authorization'), config.webPassword)) {
-      return context.body('Authentication required', 401, {
-        'www-authenticate': 'Basic realm="Immich Web Media Optimizer", charset="UTF-8"',
-        'cache-control': 'no-store',
-        'content-type': 'text/plain; charset=utf-8',
-      });
-    }
-    await next();
-  });
+  // With WEB_AUTH_DISABLED the operator authenticates callers in front of this service (Pocket ID
+  // behind oauth2-proxy, for instance); the same-origin check on writes still applies.
+  if (!config.authDisabled) {
+    app.use('*', async (context, next) => {
+      if (!isAuthenticated(context.req.header('authorization'), config.webPassword)) {
+        return context.body('Authentication required', 401, {
+          'www-authenticate': 'Basic realm="Immich Web Media Optimizer", charset="UTF-8"',
+          'cache-control': 'no-store',
+          'content-type': 'text/plain; charset=utf-8',
+        });
+      }
+      await next();
+    });
+  }
 
   app.use('/api/*', bodyLimit({ maxSize: MAX_JSON_BYTES, onError: (context) => jsonResponse(context, 413, { error: 'Request body is too large' }) }));
   app.use('/api/*', async (context, next) => {
@@ -139,7 +143,10 @@ export function createApp(config: AppConfig): Hono {
     profiles: PROFILES.map(({ id, label, sources }) => ({ id, label, sources })),
   }));
 
-  app.get('/api/config', (context) => jsonResponse(context, 200, { extraButtons: config.extraButtons }));
+  app.get('/api/config', (context) => jsonResponse(context, 200, {
+    extraButtons: config.extraButtons,
+    authDisabled: config.authDisabled,
+  }));
 
   app.get('/api/albums', async (context) => jsonResponse(context, 200, { albums: await listAlbums() }));
 
@@ -342,6 +349,13 @@ export function createApp(config: AppConfig): Hono {
 
 async function main(): Promise<void> {
   const config = await loadConfig();
+  if (config.authDisabled) {
+    console.warn(
+      'WEB_AUTH_DISABLED is set: every request is served without authentication. Anyone who can reach this port can archive, ' +
+        'trash, and delete assets. Put your own authentication in front of the service (for example Pocket ID behind oauth2-proxy) ' +
+        'and keep the port on a trusted network.',
+    );
+  }
   configureImmich(config.immichApiBaseUrl, config.immichApiKey);
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
   await initializeBatches(config.dataDir);
