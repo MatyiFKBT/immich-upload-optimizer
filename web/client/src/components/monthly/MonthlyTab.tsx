@@ -9,44 +9,65 @@ import { useJobs } from '@/hooks/useJobs';
 import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { useMonthAssets, useMonthCounts } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
-import type { ActionKind, Job, LibraryAsset, ProfileOption } from '@/types';
+import type { ActionKind, ExtraButton, Job, LibraryAsset, ProfileOption } from '@/types';
 
 interface Props {
   profiles: ProfileOption[];
+  extraButtons: readonly ExtraButton[];
 }
 
 const KIND_LABEL: Record<ActionKind, string> = {
   compress: 'Compress and delete original',
   trash: 'Move to trash',
   archive: 'Archive',
+  tagArchive: 'Tag and archive',
 };
 
-const ACTION_COPY: Record<ActionKind, { title: (what: string) => string; description: string; confirmLabel: string }> = {
-  compress: {
-    title: (what) => `Queue compression for ${what}?`,
-    description:
-      'The job runs in the background, one job at a time. Each original is replaced only after the smaller candidate is uploaded, verified, tagged, and its tags and albums are copied; the original is deleted afterwards. A replacement cannot be undone.',
-    confirmLabel: 'Queue compression',
-  },
-  trash: {
-    title: (what) => `Queue trashing ${what}?`,
-    description: 'Trashed assets stay in Immich and can be restored from there.',
-    confirmLabel: 'Queue trash',
-  },
-  archive: {
-    title: (what) => `Queue archiving ${what}?`,
+function kindLabel(kind: ActionKind, tag: string | null): string {
+  if (kind === 'tagArchive') return tag ? `Tag as “${tag}” and archive` : 'Tag and archive';
+  return KIND_LABEL[kind];
+}
+
+function actionCopy(kind: ActionKind, what: string, tag: string | null): { title: string; description: string; confirmLabel: string } {
+  if (kind === 'tagArchive') {
+    const label = tag ?? 'the tag';
+    return {
+      title: `Queue “${label}” for ${what}?`,
+      description: `The job runs in the background, one job at a time. Each asset is tagged “${label}” in Immich first, and only archived once Immich confirms the tag was applied, so nothing leaves the timeline untagged. Archiving is reversible from Immich; the tag stays.`,
+      confirmLabel: `Queue “${label}”`,
+    };
+  }
+  if (kind === 'compress') {
+    return {
+      title: `Queue compression for ${what}?`,
+      description:
+        'The job runs in the background, one job at a time. Each original is replaced only after the smaller candidate is uploaded, verified, tagged, and its tags and albums are copied; the original is deleted afterwards. A replacement cannot be undone.',
+      confirmLabel: 'Queue compression',
+    };
+  }
+  if (kind === 'trash') {
+    return {
+      title: `Queue trashing ${what}?`,
+      description: 'Trashed assets stay in Immich and can be restored from there.',
+      confirmLabel: 'Queue trash',
+    };
+  }
+  return {
+    title: `Queue archiving ${what}?`,
     description: 'Archived assets leave the timeline but stay in the library.',
     confirmLabel: 'Queue archive',
-  },
-};
+  };
+}
 
-export function MonthlyTab({ profiles }: Props) {
+/** An action waiting for confirmation; `tag` carries the button label for a tag-and-archive action. */
+type QueuedAction = PendingAction & { kind: ActionKind; tag: string | null };
+
+export function MonthlyTab({ profiles, extraButtons }: Props) {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState<number | null>(null);
   const [marks, setMarks] = useState<ReadonlyMap<string, Mark>>(() => new Map());
   const [profileId, setProfileId] = useState('');
-  // This tab only ever queues its own three kinds; the intersection keeps that narrow for submitJob.
-  const [pending, setPending] = useState<(PendingAction & { kind: ActionKind }) | null>(null);
+  const [pending, setPending] = useState<QueuedAction | null>(null);
   const [busy, setBusy] = useState(false);
   const [promptsHidden, setPromptsHidden] = useState(() => CONFIRM_KINDS.some((kind) => isConfirmationHidden(kind)));
 
@@ -78,11 +99,11 @@ export function MonthlyTab({ profiles }: Props) {
         return next;
       });
       if (job.status === 'failed') {
-        toast.error(`${KIND_LABEL[kind]} failed — ${job.message ?? 'unknown error'}`);
+        toast.error(`${kindLabel(kind, job.tag)} failed — ${job.message ?? 'unknown error'}`);
       } else if (kind === 'compress' && job.replaced === 0) {
         toast.info(job.message ?? 'Nothing was replaced');
       } else {
-        toast.success(job.message ?? `${KIND_LABEL[kind]} finished`);
+        toast.success(job.message ?? `${kindLabel(kind, job.tag)} finished`);
       }
     },
     [remove, restore],
@@ -116,7 +137,7 @@ export function MonthlyTab({ profiles }: Props) {
     });
   };
 
-  const submitJob = async (kind: ActionKind, assetIds: string[]) => {
+  const submitJob = async (kind: ActionKind, assetIds: string[], tag: string | null = null) => {
     if (kind === 'compress' && !activeProfileId) {
       toast.error('Choose a compression profile first');
       return;
@@ -129,8 +150,8 @@ export function MonthlyTab({ profiles }: Props) {
     remove(assetIds);
     setBusy(true);
     try {
-      await api.enqueueJob({ kind, assetIds, profileId: kind === 'compress' ? activeProfileId : null });
-      toast.success(`${KIND_LABEL[kind]} queued · ${assetIds.length} asset(s)`);
+      await api.enqueueJob({ kind, assetIds, profileId: kind === 'compress' ? activeProfileId : null, ...(kind === 'tagArchive' ? { tag } : {}) });
+      toast.success(`${kindLabel(kind, tag)} queued · ${assetIds.length} asset(s)`);
       refreshJobs();
     } catch (caught) {
       for (const asset of hidden) queuedSnapshots.current.delete(asset.id);
@@ -141,14 +162,14 @@ export function MonthlyTab({ profiles }: Props) {
     }
   };
 
-  const requestAction = (kind: ActionKind, assetIds: string[]) => {
+  const requestAction = (kind: ActionKind, assetIds: string[], tag: string | null = null) => {
     if (assetIds.length === 0) return;
     if (isConfirmationHidden(kind)) {
-      void submitJob(kind, assetIds);
+      void submitJob(kind, assetIds, tag);
       return;
     }
     const what = assetIds.length === 1 ? 'this asset' : `${assetIds.length} assets`;
-    setPending({ kind, assetIds, title: ACTION_COPY[kind].title(what), description: ACTION_COPY[kind].description, confirmLabel: ACTION_COPY[kind].confirmLabel });
+    setPending({ kind, assetIds, tag, ...actionCopy(kind, what, tag) });
   };
 
   const confirmPending = (remember: boolean) => {
@@ -158,9 +179,9 @@ export function MonthlyTab({ profiles }: Props) {
     if (remember) {
       setConfirmationHidden(action.kind, true);
       setPromptsHidden(true);
-      toast.info(`No longer asking before ${action.kind} actions. Use “Re-enable prompts” to bring them back.`);
+      toast.info(`No longer asking before ${kindLabel(action.kind, action.tag).toLowerCase()} actions. Use “Re-enable prompts” to bring them back.`);
     }
-    void submitJob(action.kind, action.assetIds);
+    void submitJob(action.kind, action.assetIds, action.tag);
   };
 
   const cancelQueuedJob = async (jobId: string) => {
@@ -204,6 +225,7 @@ export function MonthlyTab({ profiles }: Props) {
           busy={busy}
           promptsHidden={promptsHidden}
           pendingAssetIds={pendingAssetIds}
+          extraButtons={extraButtons}
           onBack={() => setMonth(null)}
           onMark={toggleMark}
           onProfileChange={setProfileId}

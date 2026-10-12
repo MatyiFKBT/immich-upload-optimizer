@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { applyBatchResults, createBatch, getBatch, BatchRequestError, type BatchView } from './batches.js';
-import { archiveAssets, getAssetBrief, getAssetSnapshot, trashAssets, unlinkMotionVideo } from './immich.js';
+import { archiveAssets, getAssetBrief, getAssetSnapshot, tagAndArchiveAssets, trashAssets, unlinkMotionVideo } from './immich.js';
 import { bestProfileFor, type ProfileId } from './optimizer.js';
 
-export type JobKind = 'compress' | 'trash' | 'archive' | 'motion';
+export type JobKind = 'compress' | 'trash' | 'archive' | 'tagArchive' | 'motion';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
 
 export interface JobView {
@@ -13,6 +13,8 @@ export interface JobView {
   /** Assets the job actually settled (replaced or deliberately skipped), for removing them from the grid. */
   resolvedIds: string[];
   profileId: string | null;
+  /** `tagArchive` jobs only: the tag to apply before archiving, from the configured extra buttons. */
+  tag: string | null;
   /** Live-photo jobs only: also compress each still with its best profile after unlinking. */
   compress: boolean;
   status: JobStatus;
@@ -33,6 +35,8 @@ const BATCH_POLL_MS = 1000;
 
 const jobs: JobView[] = [];
 let draining = false;
+/** Tag names the running server is allowed to apply, i.e. the labels configured in `EXTRA_BUTTONS`. */
+let allowedTags: readonly string[] = [];
 
 function delay(ms: number): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();
@@ -40,9 +44,10 @@ function delay(ms: number): Promise<void> {
   return promise;
 }
 
-export function initializeQueue(): void {
+export function initializeQueue(extraTags: readonly string[] = []): void {
   jobs.length = 0;
   draining = false;
+  allowedTags = extraTags;
 }
 
 /** Newest first, so the client can render the most recent activity at the top. */
@@ -50,13 +55,22 @@ export function listJobs(): JobView[] {
   return [...jobs].reverse();
 }
 
-export function enqueueJob(options: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean }): JobView {
+export function enqueueJob(options: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean; tag?: string | null }): JobView {
+  // The tag comes from the client, so it is only accepted when an operator configured it in
+  // EXTRA_BUTTONS; a request can never create or apply an arbitrary tag.
+  const tag = options.kind === 'tagArchive' ? options.tag ?? null : null;
+  if (options.kind === 'tagArchive') {
+    if (!tag) throw new BatchRequestError(400, 'A tag-and-archive job needs the tag of a configured button');
+    if (!allowedTags.includes(tag)) throw new BatchRequestError(400, 'That tag is not configured in EXTRA_BUTTONS');
+  }
+
   const job: JobView = {
     id: randomUUID(),
     kind: options.kind,
     assetIds: options.assetIds,
     resolvedIds: [],
     profileId: options.profileId,
+    tag,
     compress: options.compress === true,
     status: 'queued',
     createdAt: Date.now(),
@@ -127,6 +141,13 @@ async function executeJob(job: JobView): Promise<void> {
     await archiveAssets(job.assetIds);
     job.resolvedIds = job.assetIds;
     job.message = `Archived ${job.assetIds.length} asset(s)`;
+    return;
+  }
+  if (job.kind === 'tagArchive') {
+    if (!job.tag) throw new Error('This job has no tag to apply');
+    await tagAndArchiveAssets(job.assetIds, job.tag);
+    job.resolvedIds = job.assetIds;
+    job.message = `Tagged ${job.assetIds.length} asset(s) “${job.tag}” and archived them`;
     return;
   }
   if (job.kind === 'motion') {

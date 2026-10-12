@@ -448,6 +448,21 @@ export async function archiveAssets(ids: string[]): Promise<void> {
   await updateAssets({ assetBulkUpdateDto: { ids, visibility: AssetVisibility.Archive } });
 }
 
+/**
+ * Applies `tagName` (created on first use) to every asset and then archives them. Immich reports how
+ * many assets it tagged, and archiving only happens once that count matches, so no asset can leave
+ * the timeline without carrying its tag.
+ */
+export async function tagAndArchiveAssets(ids: string[], tagName: string): Promise<void> {
+  const [tag] = await upsertTags({ tagUpsertDto: { tags: [tagName] } });
+  if (!tag) throw new Error(`Immich did not return the "${tagName}" tag`);
+  const result = await bulkTagAssets({ tagBulkAssetsDto: { assetIds: ids, tagIds: [tag.id] } });
+  if (result.count !== ids.length) {
+    throw new Error(`Immich tagged ${result.count} of ${ids.length} asset(s) with "${tagName}"; none were archived`);
+  }
+  await archiveAssets(ids);
+}
+
 export interface MotionPhoto {
   id: string;
   originalFileName: string;

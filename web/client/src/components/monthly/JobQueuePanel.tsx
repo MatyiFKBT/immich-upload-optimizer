@@ -1,16 +1,24 @@
-import { Loader2, Trash2, X } from 'lucide-react';
+import { Loader2, Tag, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import type { Job, JobKind, JobStatus } from '@/types';
+import type { Job, JobStatus } from '@/types';
 
-const KIND_LABEL: Record<JobKind, string> = {
-  compress: 'Compress and delete original',
-  trash: 'Move to trash',
-  archive: 'Archive',
-  motion: 'Unlink and trash motion video',
-};
+function jobLabel(job: Job): string {
+  switch (job.kind) {
+    case 'compress':
+      return 'Compress and delete original';
+    case 'trash':
+      return 'Move to trash';
+    case 'archive':
+      return 'Archive';
+    case 'tagArchive':
+      return job.tag ? `Tag as “${job.tag}” and archive` : 'Tag and archive';
+    case 'motion':
+      return 'Unlink and trash motion video';
+  }
+}
 
 const STATUS_LABEL: Record<JobStatus, string> = {
   queued: 'Queued',
@@ -52,9 +60,10 @@ export function JobQueuePanel({ jobs, error, onCancel }: Props) {
             <div className="flex min-w-0 items-center gap-2">
               {job.status === 'running' ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
               {job.kind === 'trash' ? <Trash2 className="size-4 shrink-0 text-muted-foreground" /> : null}
+              {job.kind === 'tagArchive' ? <Tag className="size-4 shrink-0 text-muted-foreground" /> : null}
               <div className="min-w-0">
                 <p className="text-xs font-medium">
-                  {KIND_LABEL[job.kind]} · {job.assetIds.length} asset(s)
+                  {jobLabel(job)} · {job.assetIds.length} asset(s)
                 </p>
                 <p className="truncate text-xs text-muted-foreground" title={job.message ?? ''}>
                   {job.message ?? STATUS_LABEL[job.status]}

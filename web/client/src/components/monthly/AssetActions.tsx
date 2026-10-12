@@ -1,16 +1,20 @@
 import { Archive, Minimize2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { ExtraButton } from '@/types';
+import { ExtraActionButton } from './ExtraActionButton';
 
 interface Props {
   disabled?: boolean;
   compressible: boolean;
+  extraButtons: readonly ExtraButton[];
   onCompress: () => void;
   onTrash: () => void;
   onArchive: () => void;
+  onExtraAction: (button: ExtraButton) => void;
 }
 
-export function AssetActions({ disabled, compressible, onCompress, onTrash, onArchive }: Props) {
+export function AssetActions({ disabled, compressible, extraButtons, onCompress, onTrash, onArchive, onExtraAction }: Props) {
   const actions = [
     { key: 'compress', label: 'Compress and delete original', icon: Minimize2, onClick: onCompress, enabled: compressible },
     { key: 'trash', label: 'Move to trash', icon: Trash2, onClick: onTrash, enabled: true },
@@ -35,6 +39,9 @@ export function AssetActions({ disabled, compressible, onCompress, onTrash, onAr
           </TooltipTrigger>
           <TooltipContent>{action.enabled ? action.label : 'The selected compression profile does not support this format'}</TooltipContent>
         </Tooltip>
+      ))}
+      {extraButtons.map((button) => (
+        <ExtraActionButton key={button.label} button={button} compact disabled={disabled} onClick={() => onExtraAction(button)} />
       ))}
     </>
   );

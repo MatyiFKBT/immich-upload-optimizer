@@ -139,6 +139,8 @@ export function createApp(config: AppConfig): Hono {
     profiles: PROFILES.map(({ id, label, sources }) => ({ id, label, sources })),
   }));
 
+  app.get('/api/config', (context) => jsonResponse(context, 200, { extraButtons: config.extraButtons }));
+
   app.get('/api/albums', async (context) => jsonResponse(context, 200, { albums: await listAlbums() }));
 
   app.post('/api/search', async (context) => {
@@ -267,8 +269,8 @@ export function createApp(config: AppConfig): Hono {
     const body = await readJson(context);
     const assetIds = assetIdList(body.assetIds);
     const kind = body.kind;
-    if (kind !== 'compress' && kind !== 'trash' && kind !== 'archive' && kind !== 'motion') {
-      throw new HttpError(400, 'kind must be compress, trash, archive, or motion');
+    if (kind !== 'compress' && kind !== 'trash' && kind !== 'archive' && kind !== 'tagArchive' && kind !== 'motion') {
+      throw new HttpError(400, 'kind must be compress, trash, archive, tagArchive, or motion');
     }
     let profileId: string | null = null;
     if (kind === 'compress') {
@@ -280,11 +282,16 @@ export function createApp(config: AppConfig): Hono {
     if (body.compress !== undefined && typeof body.compress !== 'boolean') {
       throw new HttpError(400, 'compress must be a boolean');
     }
+    if (body.tag !== undefined && typeof body.tag !== 'string') {
+      throw new HttpError(400, 'tag must be a string');
+    }
     return jsonResponse(context, 202, enqueueJob({
       kind,
       assetIds,
       profileId,
       compress: kind === 'motion' && body.compress === true,
+      // enqueueJob rejects a tag that no configured extra button declares.
+      tag: typeof body.tag === 'string' ? body.tag : null,
     }));
   });
 
@@ -326,7 +333,7 @@ async function main(): Promise<void> {
   configureImmich(config.immichApiBaseUrl, config.immichApiKey);
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
   await initializeBatches(config.dataDir);
-  initializeQueue();
+  initializeQueue(config.extraButtons.map((button) => button.label));
 
   const server = serve({ fetch: createApp(config).fetch, hostname: config.webHost, port: config.webPort }, (info) => {
     console.log(`Immich Web Media Optimizer listening on ${config.webHost}:${info.port}`);

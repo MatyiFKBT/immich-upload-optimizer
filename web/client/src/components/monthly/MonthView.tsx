@@ -7,7 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { buildTimeline, type Mark } from '@/lib/bursts';
 import { formatBytes } from '@/lib/format';
 import { monthLabel } from '@/lib/months';
-import type { ActionKind, LibraryAsset, ProfileOption } from '@/types';
+import type { ActionKind, ExtraButton, LibraryAsset, ProfileOption } from '@/types';
 import { AssetActions } from './AssetActions';
 import { BurstGroupCard } from './BurstGroupCard';
 import { PhotoTile } from './PhotoTile';
@@ -25,10 +25,11 @@ interface Props {
   busy: boolean;
   promptsHidden: boolean;
   pendingAssetIds: ReadonlySet<string>;
+  extraButtons: readonly ExtraButton[];
   onBack: () => void;
   onMark: (assetId: string, mark: Mark) => void;
   onProfileChange: (profileId: string) => void;
-  onAction: (kind: ActionKind, assetIds: string[]) => void;
+  onAction: (kind: ActionKind, assetIds: string[], tag?: string) => void;
   onResetPrompts: () => void;
 }
 
@@ -45,6 +46,7 @@ export function MonthView({
   busy,
   promptsHidden,
   pendingAssetIds,
+  extraButtons,
   onBack,
   onMark,
   onProfileChange,
@@ -124,6 +126,7 @@ export function MonthView({
                   pending={pendingAssetIds}
                   profileId={profileId}
                   busy={busy}
+                  extraButtons={extraButtons}
                   onMark={onMark}
                   onAction={onAction}
                 />
@@ -137,9 +140,11 @@ export function MonthView({
                         <AssetActions
                           disabled={busy || pendingAssetIds.has(asset.id)}
                           compressible={!asset.isVideo && asset.profiles.some((profile) => profile.id === profileId)}
+                          extraButtons={extraButtons}
                           onCompress={() => onAction('compress', [asset.id])}
                           onTrash={() => onAction('trash', [asset.id])}
                           onArchive={() => onAction('archive', [asset.id])}
+                          onExtraAction={(button) => onAction('tagArchive', [asset.id], button.label)}
                         />
                       }
                     />

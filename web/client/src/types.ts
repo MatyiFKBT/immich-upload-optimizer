@@ -84,12 +84,20 @@ export interface SearchResult {
 
 export type AssetVisibility = 'archive' | 'timeline' | 'hidden' | 'locked';
 
-export type ActionKind = 'compress' | 'trash' | 'archive';
+export type ActionKind = 'compress' | 'trash' | 'archive' | 'tagArchive';
 
 export type JobKind = ActionKind | 'motion';
 
 /** Kinds that can be confirmed; `motion` belongs to the live-photo tab only. */
 export type ConfirmKind = JobKind;
+
+/** A cleanup button defined by the operator in `EXTRA_BUTTONS`. */
+export interface ExtraButton {
+  /** Button text, and the Immich tag the button applies before archiving. */
+  label: string;
+  /** A lucide icon name, e.g. `archive` or `book-open`. */
+  icon: string;
+}
 
 export interface MotionPhoto {
   id: string;
@@ -127,6 +135,8 @@ export interface Job {
   assetIds: string[];
   resolvedIds: string[];
   profileId: string | null;
+  /** `tagArchive` jobs only: the tag applied before archiving. */
+  tag: string | null;
   /** Live-photo jobs only: the stills are compressed with their best profile after unlinking. */
   compress: boolean;
   status: JobStatus;

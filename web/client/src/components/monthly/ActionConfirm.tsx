@@ -24,6 +24,7 @@ const KIND_LABEL: Record<ConfirmKind, string> = {
   compress: 'compress and delete',
   trash: 'trash',
   archive: 'archive',
+  tagArchive: 'tag and archive',
   motion: 'unlink and trash motion video',
 };
 

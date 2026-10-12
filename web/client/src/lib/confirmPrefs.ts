@@ -1,7 +1,7 @@
 import type { ConfirmKind } from '@/types';
 
 /** Every kind that can be acknowledged, including the live-photo tab's own action. */
-export const CONFIRM_KINDS: readonly ConfirmKind[] = ['compress', 'trash', 'archive', 'motion'];
+export const CONFIRM_KINDS: readonly ConfirmKind[] = ['compress', 'trash', 'archive', 'tagArchive', 'motion'];
 
 const PREFIX = 'immichOptimizer.confirm.';
 

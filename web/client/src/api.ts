@@ -1,4 +1,4 @@
-import type { Album, Batch, Job, JobKind, MonthAssets, MonthCounts, MotionPhotos, ProfileOption, SearchFilters, SearchResult } from './types';
+import type { Album, Batch, ExtraButton, Job, JobKind, MonthAssets, MonthCounts, MotionPhotos, ProfileOption, SearchFilters, SearchResult } from './types';
 
 export class ApiError extends Error {}
 
@@ -27,6 +27,7 @@ export function thumbnailUrl(assetId: string, size: 'thumbnail' | 'preview' = 't
 
 export const api = {
   profiles: () => request<{ profiles: ProfileOption[] }>('/api/profiles'),
+  config: () => request<{ extraButtons: ExtraButton[] }>('/api/config'),
   albums: () => request<{ albums: Album[] }>('/api/albums'),
   search: (filters: SearchFilters) => request<SearchResult>('/api/search', { method: 'POST', body: filters }),
   createBatch: (body: { assetIds: string[]; profileIds: string[]; deleteOriginal: boolean }) =>
@@ -45,9 +46,9 @@ export const api = {
   monthAssets: (year: number, month: number) => request<MonthAssets>(`/api/library/months/${year}/${month}`),
   motionPhotos: (cursor?: string) => request<MotionPhotos>(`/api/library/motion${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
   jobs: () => request<{ jobs: Job[] }>('/api/library/jobs'),
-  enqueueJob: (body: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean }) =>
+  enqueueJob: (body: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean; tag?: string | null }) =>
     request<Job>('/api/library/jobs', { method: 'POST', body }),
   cancelJob: (jobId: string) => request<{ accepted: boolean }>(`/api/library/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
 };
 
-export type { AssetItem, Batch, Job, JobKind, LibraryAsset, MonthAssets, MonthCounts, MotionPhoto, MotionPhotos, SearchFilters } from './types';
+export type { AssetItem, Batch, ExtraButton, Job, JobKind, LibraryAsset, MonthAssets, MonthCounts, MotionPhoto, MotionPhotos, SearchFilters } from './types';

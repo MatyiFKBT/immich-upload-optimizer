@@ -7,11 +7,12 @@ import { MotionTab } from '@/components/motion/MotionTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { cn } from '@/lib/utils';
-import type { Album, ProfileOption } from '@/types';
+import type { Album, ExtraButton, ProfileOption } from '@/types';
 
 export function App() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
+  const [extraButtons, setExtraButtons] = useState<ExtraButton[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState('');
 
@@ -19,10 +20,11 @@ export function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const [albumResponse, profileResponse] = await Promise.all([api.albums(), api.profiles()]);
+        const [albumResponse, profileResponse, configResponse] = await Promise.all([api.albums(), api.profiles(), api.config()]);
         if (cancelled) return;
         setAlbums(albumResponse.albums);
         setProfiles(profileResponse.profiles);
+        setExtraButtons(configResponse.extraButtons);
         setConnected(true);
       } catch (error) {
         if (cancelled) return;
@@ -78,7 +80,7 @@ export function App() {
           <CompressTab albums={albums} profiles={profiles} />
         </TabsContent>
         <TabsContent value="monthly">
-          <MonthlyTab profiles={profiles} />
+          <MonthlyTab profiles={profiles} extraButtons={extraButtons} />
         </TabsContent>
         <TabsContent value="motion">
           <MotionTab />

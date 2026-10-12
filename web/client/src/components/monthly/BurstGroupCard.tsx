@@ -2,7 +2,8 @@ import { Archive, Minimize2, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatGroupTime, suggestedKeeper, type BurstGroup, type Mark } from '@/lib/bursts';
-import type { ActionKind } from '@/types';
+import type { ActionKind, ExtraButton } from '@/types';
+import { ExtraActionButton } from './ExtraActionButton';
 import { PhotoTile } from './PhotoTile';
 
 interface Props {
@@ -11,11 +12,12 @@ interface Props {
   pending: ReadonlySet<string>;
   profileId: string;
   busy: boolean;
+  extraButtons: readonly ExtraButton[];
   onMark: (assetId: string, mark: Mark) => void;
-  onAction: (kind: ActionKind, assetIds: string[]) => void;
+  onAction: (kind: ActionKind, assetIds: string[], tag?: string) => void;
 }
 
-export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark, onAction }: Props) {
+export function BurstGroupCard({ group, marks, pending, profileId, busy, extraButtons, onMark, onAction }: Props) {
   const keeper = suggestedKeeper(group);
   const actionable = group.items.filter((item) => !pending.has(item.id));
   const trashed = actionable.filter((item) => marks.get(item.id) === 'trash').map((item) => item.id);
@@ -81,6 +83,15 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, onMark,
           <Archive className="size-4" />
           Archive {kept.length > 0 ? kept.length : ''}
         </Button>
+        {extraButtons.map((button) => (
+          <ExtraActionButton
+            key={button.label}
+            button={button}
+            count={kept.length}
+            disabled={busy || kept.length === 0}
+            onClick={() => onAction('tagArchive', kept.map((item) => item.id), button.label)}
+          />
+        ))}
         {compressSkipped > 0 ? (
           <span className="text-xs text-muted-foreground">{compressSkipped} kept file(s) cannot be compressed by the selected profile</span>
         ) : null}
