@@ -95,3 +95,28 @@
   content-visibility: auto;
   contain-intrinsic-size: 180px 200px;
 }
+
+/*
+ * Toasts report on the grid they cover, so they stay small: sonner's default padding, type and icon
+ * size are sized for standalone notifications. The selectors carry the `group`/`toaster` class from
+ * sonner.tsx to outrank sonner's own attribute rules whichever stylesheet loads first.
+ */
+.toaster [data-sonner-toast][data-styled='true'] {
+  padding: 8px 10px;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12px;
+}
+
+.toaster [data-sonner-toast][data-styled='true'] [data-title] {
+  line-height: 1.4;
+}
+
+.toaster [data-sonner-toast][data-styled='true'] [data-description] {
+  font-size: 11px;
+}
+
+.toaster [data-sonner-toast][data-styled='true'] [data-icon] svg {
+  width: 14px;
+  height: 14px;
+}

@@ -6,6 +6,7 @@ import { MonthView } from '@/components/monthly/MonthView';
 import { YearOverview } from '@/components/monthly/YearOverview';
 import { toast } from '@/components/ui/sonner';
 import { useJobs } from '@/hooks/useJobs';
+import { useJobToasts } from '@/hooks/useJobToasts';
 import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { useMonthAssets, useMonthCounts } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
@@ -75,6 +76,7 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
   const { assets, truncated, loading, error, remove, restore } = useMonthAssets(year, month);
   /** Assets hidden the moment an action was queued, so a job that cannot settle them puts them back. */
   const queuedSnapshots = useRef(new Map<string, LibraryAsset>());
+  const { start: startJobToast, track: trackJobToast, settle: settleJobToast } = useJobToasts();
 
   const handleSettled = useCallback(
     (job: Job) => {
@@ -99,14 +101,14 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
         return next;
       });
       if (job.status === 'failed') {
-        toast.error(`${kindLabel(kind, job.tag)} failed — ${job.message ?? 'unknown error'}`);
+        toast.error(`${kindLabel(kind, job.tag)} failed — ${job.message ?? 'unknown error'}`, settleJobToast(job.id));
       } else if (kind === 'compress' && job.replaced === 0) {
-        toast.info(job.message ?? 'Nothing was replaced');
+        toast.info(job.message ?? 'Nothing was replaced', settleJobToast(job.id));
       } else {
-        toast.success(job.message ?? `${kindLabel(kind, job.tag)} finished`);
+        toast.success(job.message ?? `${kindLabel(kind, job.tag)} finished`, settleJobToast(job.id));
       }
     },
-    [remove, restore],
+    [remove, restore, settleJobToast],
   );
 
   const { jobs, error: jobsError, refresh: refreshJobs } = useJobs(handleSettled);
@@ -149,14 +151,16 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
     for (const asset of hidden) queuedSnapshots.current.set(asset.id, asset);
     remove(assetIds);
     setBusy(true);
+    // The spinner starts with the click and is replaced by the job's own message once it settles.
+    const toastId = startJobToast(`${kindLabel(kind, tag)} · ${assetIds.length} asset(s)`);
     try {
-      await api.enqueueJob({ kind, assetIds, profileId: kind === 'compress' ? activeProfileId : null, ...(kind === 'tagArchive' ? { tag } : {}) });
-      toast.success(`${kindLabel(kind, tag)} queued · ${assetIds.length} asset(s)`);
+      const job = await api.enqueueJob({ kind, assetIds, profileId: kind === 'compress' ? activeProfileId : null, ...(kind === 'tagArchive' ? { tag } : {}) });
+      trackJobToast(job.id, toastId);
       refreshJobs();
     } catch (caught) {
       for (const asset of hidden) queuedSnapshots.current.delete(asset.id);
       restore(hidden);
-      toast.error(caught instanceof Error ? caught.message : 'Unable to queue the job');
+      toast.error(caught instanceof Error ? caught.message : 'Unable to queue the job', { id: toastId });
     } finally {
       setBusy(false);
     }
@@ -187,7 +191,8 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
   const cancelQueuedJob = async (jobId: string) => {
     try {
       await api.cancelJob(jobId);
-      toast.info('Queued job cancelled');
+      // A cancelled job never settles, so its spinner is replaced here.
+      toast.info('Queued job cancelled', settleJobToast(jobId));
       refreshJobs();
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Unable to cancel the job');

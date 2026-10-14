@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/sonner';
 import { useJobs } from '@/hooks/useJobs';
+import { useJobToasts } from '@/hooks/useJobToasts';
 import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { formatBytes } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,7 @@ export function MotionTab() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [compressAfter, setCompressAfter] = useState(false);
   const [promptsHidden, setPromptsHidden] = useState(() => isConfirmationHidden(MOTION));
+  const { start: startJobToast, track: trackJobToast, settle: settleJobToast } = useJobToasts();
 
   const load = useCallback(async (cursor?: string) => {
     setLoading(true);
@@ -79,10 +81,10 @@ export function MotionTab() {
         for (const id of affected) next.delete(id);
         return next;
       });
-      if (job.status === 'failed') toast.error(`Motion video cleanup failed — ${job.message ?? 'unknown error'}`);
-      else toast.success(job.message ?? 'Motion videos unlinked and trashed');
+      if (job.status === 'failed') toast.error(`Motion video cleanup failed — ${job.message ?? 'unknown error'}`, settleJobToast(job.id));
+      else toast.success(job.message ?? 'Motion videos unlinked and trashed', settleJobToast(job.id));
     },
-    [],
+    [settleJobToast],
   );
 
   const { jobs, error: jobsError, refresh: refreshJobs } = useJobs(handleSettled);

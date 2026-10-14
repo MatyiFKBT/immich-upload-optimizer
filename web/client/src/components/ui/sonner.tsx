@@ -15,6 +15,8 @@ const themeVariables = {
   '--normal-text': 'var(--popover-foreground)',
   '--normal-border': 'var(--border)',
   '--border-radius': 'var(--radius)',
+  // Sonner sets its own 356px default before spreading this object, so this narrows every toast.
+  '--width': '300px',
 } as CSSProperties;
 
 function Toaster(props: ToasterProps) {
@@ -22,9 +24,11 @@ function Toaster(props: ToasterProps) {
     <Sonner
       theme="system"
       className="toaster group"
-      position="bottom-right"
+      position="top-right"
       closeButton
       richColors
+      gap={8}
+      offset={16}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,
