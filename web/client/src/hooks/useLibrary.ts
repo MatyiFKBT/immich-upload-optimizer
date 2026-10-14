@@ -31,7 +31,7 @@ export function useMonthCounts(year: number) {
   return { counts, loading, error };
 }
 
-export function useMonthAssets(year: number | null, month: number | null) {
+export function useMonthAssets(year: number | null, month: number | null, includeArchived: boolean) {
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -49,7 +49,7 @@ export function useMonthAssets(year: number | null, month: number | null) {
     setAssets([]);
     void (async () => {
       try {
-        const result = await api.monthAssets(year, month);
+        const result = await api.monthAssets(year, month, includeArchived);
         if (cancelled) return;
         setAssets(result.items);
         setTruncated(result.truncated);
@@ -64,7 +64,7 @@ export function useMonthAssets(year: number | null, month: number | null) {
     return () => {
       cancelled = true;
     };
-  }, [year, month]);
+  }, [year, month, includeArchived]);
 
   const remove = useCallback((assetIds: readonly string[]) => {
     const removed = new Set(assetIds);

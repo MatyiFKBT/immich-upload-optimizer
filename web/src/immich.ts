@@ -354,17 +354,27 @@ export async function getMonthCounts(year: number): Promise<{ year: number; mont
  * Every asset whose local capture time falls in the given month, newest first, capped at
  * `MONTH_ASSET_LIMIT`. `takenAt` is compared in UTC while the month is derived from the asset's
  * local capture time, so the query range is widened by one day on each side and filtered exactly
- * afterwards.
+ * afterwards. Immich's metadata search returns archived assets like any other, and the month view
+ * reviews the timeline, so they are left out unless `includeArchived` asks for them.
  */
-export async function listMonthAssets(year: number, month: number): Promise<{ items: LibraryAsset[]; truncated: boolean; scanned: number; range: { from: string; to: string } }> {
+export async function listMonthAssets(
+  year: number,
+  month: number,
+  options: { includeArchived?: boolean } = {},
+): Promise<{ items: LibraryAsset[]; truncated: boolean; scanned: number; range: { from: string; to: string } }> {
   const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
-  const filter = {
+  const filter: {
+    trashedAt: { eq: null };
+    takenAt: { gte: string; lte: string };
+    visibility?: { notIn: AssetVisibility[] };
+  } = {
     trashedAt: { eq: null },
     takenAt: {
       gte: new Date(Date.UTC(year, month - 1, 1) - 86_400_000).toISOString(),
       lte: new Date(Date.UTC(year, month, 1) + 86_400_000).toISOString(),
     },
   };
+  if (!options.includeArchived) filter.visibility = { notIn: [AssetVisibility.Archive] };
 
   const items: LibraryAsset[] = [];
   let cursor: string | undefined;

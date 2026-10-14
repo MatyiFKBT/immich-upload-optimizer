@@ -264,7 +264,11 @@ export function createApp(config: AppConfig): Hono {
     const month = Number(context.req.param('month'));
     if (!Number.isInteger(year) || year < 1900 || year > 2200) throw new HttpError(400, 'year must be a four digit year');
     if (!Number.isInteger(month) || month < 1 || month > 12) throw new HttpError(400, 'month must be between 1 and 12');
-    const result = await listMonthAssets(year, month);
+    const includeArchived = context.req.query('includeArchived');
+    if (includeArchived !== undefined && includeArchived !== 'true' && includeArchived !== 'false') {
+      throw new HttpError(400, 'includeArchived must be true or false');
+    }
+    const result = await listMonthAssets(year, month, { includeArchived: includeArchived === 'true' });
     const optimized = await listOptimizedAssetIds(result.range.from, result.range.to).catch(() => new Set<string>());
     return jsonResponse(context, 200, {
       year,

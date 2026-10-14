@@ -4,6 +4,7 @@ import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionCo
 import { JobQueuePanel } from '@/components/monthly/JobQueuePanel';
 import { MonthView } from '@/components/monthly/MonthView';
 import { YearOverview } from '@/components/monthly/YearOverview';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui/sonner';
 import { useJobs } from '@/hooks/useJobs';
 import { useJobToasts } from '@/hooks/useJobToasts';
@@ -66,6 +67,7 @@ type QueuedAction = PendingAction & { kind: ActionKind; tag: string | null };
 export function MonthlyTab({ profiles, extraButtons }: Props) {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState<number | null>(null);
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [marks, setMarks] = useState<ReadonlyMap<string, Mark>>(() => new Map());
   const [profileId, setProfileId] = useState('');
   const [pending, setPending] = useState<QueuedAction | null>(null);
@@ -73,7 +75,7 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
   const [promptsHidden, setPromptsHidden] = useState(() => CONFIRM_KINDS.some((kind) => isConfirmationHidden(kind)));
 
   const { counts, loading: countsLoading, error: countsError } = useMonthCounts(year);
-  const { assets, truncated, loading, error, remove, restore } = useMonthAssets(year, month);
+  const { assets, truncated, loading, error, remove, restore } = useMonthAssets(year, month, includeArchived);
   /** Assets hidden the moment an action was queued, so a job that cannot settle them puts them back. */
   const queuedSnapshots = useRef(new Map<string, LibraryAsset>());
   const { watch: watchJobToast, settle: settleJobToast, drop: dropJobToast } = useJobToasts();
@@ -210,6 +212,13 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-end">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Checkbox checked={includeArchived} onCheckedChange={(checked) => setIncludeArchived(checked === true)} />
+          Include archived assets
+        </label>
+      </div>
+
       {month === null ? (
         <YearOverview
           year={year}
@@ -224,6 +233,7 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
           year={year}
           month={month}
           assets={assets}
+          includeArchived={includeArchived}
           truncated={truncated}
           loading={loading}
           error={error}

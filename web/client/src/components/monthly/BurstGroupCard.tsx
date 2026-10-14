@@ -24,6 +24,9 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, extraBu
   const kept = actionable.filter((item) => marks.get(item.id) === 'keep');
   const compressible = kept.filter((item) => item.profiles.some((profile) => profile.id === profileId)).map((item) => item.id);
   const compressSkipped = kept.length - compressible.length;
+  // Archiving something already in the archive changes nothing, so it is not offered.
+  const archivable = kept.filter((item) => item.visibility !== 'archive');
+  const archivedKept = kept.length - archivable.length;
   const waiting = group.items.length - actionable.length;
 
   return (
@@ -77,11 +80,11 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, extraBu
           variant="outline"
           size="sm"
           className="h-9 grow basis-[7rem] sm:h-8 sm:flex-none"
-          disabled={busy || kept.length === 0}
-          onClick={() => onAction('archive', kept.map((item) => item.id))}
+          disabled={busy || archivable.length === 0}
+          onClick={() => onAction('archive', archivable.map((item) => item.id))}
         >
           <Archive className="size-4" />
-          Archive {kept.length > 0 ? kept.length : ''}
+          Archive {archivable.length > 0 ? archivable.length : ''}
         </Button>
         {extraButtons.map((button) => (
           <ExtraActionButton
@@ -95,6 +98,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, extraBu
         {compressSkipped > 0 ? (
           <span className="text-xs text-muted-foreground">{compressSkipped} kept file(s) cannot be compressed by the selected profile</span>
         ) : null}
+        {archivedKept > 0 ? <span className="text-xs text-muted-foreground">{archivedKept} kept file(s) already archived</span> : null}
         {waiting > 0 ? <span className="text-xs text-muted-foreground">{waiting} asset(s) already queued</span> : null}
       </div>
     </div>

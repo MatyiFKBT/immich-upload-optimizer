@@ -1,9 +1,9 @@
 {
   "project": "Immich Web Media Optimizer",
   "overall_progress_percent": 96,
-  "completed_steps": 21,
-  "total_steps": 22,
-  "updated_at": "2026-10-12",
+  "completed_steps": 22,
+  "total_steps": 23,
+  "updated_at": "2026-10-14",
   "steps": [
     {
       "id": "plan-and-tracker",
@@ -151,6 +151,13 @@
       "status": "completed",
       "progress_percent": 100,
       "notes": "WEB_AUTH_DISABLED=true skips the Basic-auth middleware and the password requirement so a proxy (Pocket ID behind oauth2-proxy, Authelia, forward auth) can authenticate callers. Only true/false are accepted; the flag is reported through GET /api/config and as a header banner, and main() logs a warning that every request is unauthenticated. Cross-origin write checks still apply."
+    },
+    {
+      "id": "monthly-archived-toggle",
+      "title": "Exclude archived assets from the monthly review by default",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The month listing asks Immich for every visibility except archive unless GET /api/library/months/{year}/{month}?includeArchived=true says otherwise (the param is strict true/false, 400 otherwise), so archived assets no longer eat into the 3000-asset cap. The monthly tab carries an \"Include archived assets\" switch that reloads the month; archived tiles are badged and never offered an archive action, per asset or per burst group, since they already left the timeline."
     },
     {
       "id": "verification",

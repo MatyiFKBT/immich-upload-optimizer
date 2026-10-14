@@ -64,6 +64,11 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
         {asset.optimized ? (
           <Badge className="absolute bottom-2 left-2 bg-success text-success-foreground">optimized</Badge>
         ) : null}
+        {asset.visibility === 'archive' ? (
+          <Badge className="absolute right-2 bottom-2" variant="secondary">
+            archived
+          </Badge>
+        ) : null}
       </a>
 
       <div className="min-w-0 px-1">

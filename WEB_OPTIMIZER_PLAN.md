@@ -23,7 +23,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 ### Monthly cleanup tab (second tab)
 
 - Year grid of 12 month boxes with per-month capture counts, taken from one `calendar-heatmap?type=Taken` request (requires the `user.read` scope); prev/next year navigation.
-- Opening a month loads every asset captured in it (images and videos), newest first, thumbnails only, capped at 3000 assets with a visible truncation notice. The query range is widened by a day on each side because `takenAt` is UTC while the month is derived from the asset's local capture time, then filtered exactly.
+- Opening a month loads every asset captured in it (images and videos), newest first, thumbnails only, capped at 3000 assets with a visible truncation notice. Archived assets are excluded unless the *Include archived assets* switch is on; the archived ones shown that way are badged and never offered an archive action. The query range is widened by a day on each side because `takenAt` is UTC while the month is derived from the asset's local capture time, then filtered exactly.
 - Assets sharing a capture minute (EXIF `localDateTime` truncated to the minute) form a burst group; the largest file in a group is highlighted as the suggested keep. Left click marks keep, right click marks trash, clicking the same mark clears it.
 - Each burst group has its own action bar: trash the trash-marked images, compress the keep-marked images (smaller candidate enforced, original deleted only after verification), or archive the keep-marked images. Buttons are disabled when their set is empty, and each action confirms first.
 - Ungrouped assets each get three per-asset buttons: compress and delete original, trash, archive.
@@ -79,6 +79,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 20. Open an asset in the user's own Immich from its thumbnail, through Immich's link helper.
 21. Show the recognized, named people under each asset in the month view and link each face to that person's Immich page.
 22. Let `WEB_AUTH_DISABLED=true` drop the built-in Basic auth for deployments that authenticate callers in front of the service, with a startup warning, an ignored password requirement, and a visible banner in the UI.
+23. Leave archived assets out of the monthly review by default, with an *Include archived assets* toggle that loads them badged and drops the archive actions that would do nothing.
 
 ## Safety invariants
 
@@ -108,6 +109,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - A replacement carries the `optimized` tag and the month view marks assets that already have it.
 - A push to `web-ui` publishes a pullable web image to GHCR tagged with the commit hash.
 - Queuing an archive, trash, or compression removes its assets from the month immediately, and an asset the job could not settle returns to the grid.
+- The monthly review and its month listing leave archived assets out unless *Include archived assets* is ticked, and archived assets shown that way are marked and never offered an archive action.
 - Buttons defined in `EXTRA_BUTTONS` tag the selected assets with their label and archive them, a tag that no configured button declares is rejected, and the assets only leave the timeline after Immich confirms the tag was applied.
 - Clicking a thumbnail opens that asset in the user's own Immich through the link helper.
 - Each asset in the month view lists the people Immich recognized in it, and clicking a face opens that person's Immich page.

@@ -7,6 +7,8 @@ import { ExtraActionButton } from './ExtraActionButton';
 interface Props {
   disabled?: boolean;
   compressible: boolean;
+  /** The asset already sits in the archive, so archiving it again is not offered. */
+  archived: boolean;
   extraButtons: readonly ExtraButton[];
   onCompress: () => void;
   onTrash: () => void;
@@ -14,11 +16,18 @@ interface Props {
   onExtraAction: (button: ExtraButton) => void;
 }
 
-export function AssetActions({ disabled, compressible, extraButtons, onCompress, onTrash, onArchive, onExtraAction }: Props) {
+export function AssetActions({ disabled, compressible, archived, extraButtons, onCompress, onTrash, onArchive, onExtraAction }: Props) {
   const actions = [
-    { key: 'compress', label: 'Compress and delete original', icon: Minimize2, onClick: onCompress, enabled: compressible },
-    { key: 'trash', label: 'Move to trash', icon: Trash2, onClick: onTrash, enabled: true },
-    { key: 'archive', label: 'Archive', icon: Archive, onClick: onArchive, enabled: true },
+    {
+      key: 'compress',
+      label: 'Compress and delete original',
+      icon: Minimize2,
+      onClick: onCompress,
+      enabled: compressible,
+      disabledHint: 'The selected compression profile does not support this format',
+    },
+    { key: 'trash', label: 'Move to trash', icon: Trash2, onClick: onTrash, enabled: true, disabledHint: '' },
+    { key: 'archive', label: 'Archive', icon: Archive, onClick: onArchive, enabled: !archived, disabledHint: 'Already archived' },
   ] as const;
 
   return (
@@ -37,7 +46,7 @@ export function AssetActions({ disabled, compressible, extraButtons, onCompress,
               <action.icon className="size-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{action.enabled ? action.label : 'The selected compression profile does not support this format'}</TooltipContent>
+          <TooltipContent>{action.enabled ? action.label : action.disabledHint}</TooltipContent>
         </Tooltip>
       ))}
       {extraButtons.map((button) => (

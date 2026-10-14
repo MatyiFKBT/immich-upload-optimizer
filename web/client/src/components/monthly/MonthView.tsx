@@ -16,6 +16,7 @@ interface Props {
   year: number;
   month: number;
   assets: LibraryAsset[];
+  includeArchived: boolean;
   truncated: boolean;
   loading: boolean;
   error: string;
@@ -37,6 +38,7 @@ export function MonthView({
   year,
   month,
   assets,
+  includeArchived,
   truncated,
   loading,
   error,
@@ -140,6 +142,7 @@ export function MonthView({
                         <AssetActions
                           disabled={busy || pendingAssetIds.has(asset.id)}
                           compressible={!asset.isVideo && asset.profiles.some((profile) => profile.id === profileId)}
+                          archived={asset.visibility === 'archive'}
                           extraButtons={extraButtons}
                           onCompress={() => onAction('compress', [asset.id])}
                           onTrash={() => onAction('trash', [asset.id])}
@@ -155,7 +158,11 @@ export function MonthView({
           : null}
 
         {!loading && assets.length === 0 && !error ? (
-          <p className="text-sm text-muted-foreground">No images or videos were captured in this month.</p>
+          <p className="text-sm text-muted-foreground">
+            {includeArchived
+              ? 'No images or videos were captured in this month.'
+              : 'No images or videos were captured in this month. Archived assets are hidden — tick “Include archived assets” to review them.'}
+          </p>
         ) : null}
       </div>
     </TooltipProvider>

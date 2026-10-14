@@ -48,7 +48,8 @@ export const api = {
   abandon: (batchId: string) =>
     request<{ accepted: boolean }>(`/api/batches/${encodeURIComponent(batchId)}/abandon`, { method: 'POST', body: {} }),
   monthCounts: (year: number) => request<MonthCounts>(`/api/library/months/${year}`),
-  monthAssets: (year: number, month: number) => request<MonthAssets>(`/api/library/months/${year}/${month}`),
+  monthAssets: (year: number, month: number, includeArchived: boolean) =>
+    request<MonthAssets>(`/api/library/months/${year}/${month}?includeArchived=${includeArchived ? 'true' : 'false'}`),
   motionPhotos: (cursor?: string) => request<MotionPhotos>(`/api/library/motion${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
   jobs: () => request<{ jobs: Job[] }>('/api/library/jobs'),
   enqueueJob: (body: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean; tag?: string | null }) =>
