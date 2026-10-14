@@ -33,7 +33,7 @@ export function MotionTab() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [compressAfter, setCompressAfter] = useState(false);
   const [promptsHidden, setPromptsHidden] = useState(() => isConfirmationHidden(MOTION));
-  const { start: startJobToast, track: trackJobToast, settle: settleJobToast } = useJobToasts();
+  const { watch: watchJobToast, settle: settleJobToast, drop: dropJobToast } = useJobToasts();
 
   const load = useCallback(async (cursor?: string) => {
     setLoading(true);
@@ -81,8 +81,8 @@ export function MotionTab() {
         for (const id of affected) next.delete(id);
         return next;
       });
-      if (job.status === 'failed') toast.error(`Motion video cleanup failed — ${job.message ?? 'unknown error'}`, settleJobToast(job.id));
-      else toast.success(job.message ?? 'Motion videos unlinked and trashed', settleJobToast(job.id));
+      // The action's own toast carries the outcome, so the queue only has to settle its promise.
+      settleJobToast(job);
     },
     [settleJobToast],
   );
@@ -216,12 +216,18 @@ export function MotionTab() {
 
   const enqueue = async (assetIds: string[]) => {
     setBusy(true);
+    // One toast per action: it spins from the click and shows the job's own result when it settles,
+    // or the request's error if the job could not be queued at all.
+    const request = watchJobToast(api.enqueueJob({ kind: MOTION, assetIds, profileId: null, compress: compressAfter }), {
+      loading: `Unlink and trash · ${assetIds.length} live photo(s)`,
+      success: (job) => job.message ?? 'Motion videos unlinked and trashed',
+      error: (error) => `Unlinking motion videos failed — ${error instanceof Error ? error.message : 'unknown error'}`,
+    });
     try {
-      await api.enqueueJob({ kind: MOTION, assetIds, profileId: null, compress: compressAfter });
-      toast.success(`Unlink queued · ${assetIds.length} live photo(s)`);
+      await request;
       refreshJobs();
-    } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : 'Unable to queue the job');
+    } catch {
+      // The toast already reports the failure; nothing was changed in the library.
     } finally {
       setBusy(false);
     }
@@ -268,6 +274,17 @@ export function MotionTab() {
 
   const allLoadedSelected = items.length > 0 && items.every((item) => selected.has(item.id));
   const selectableCount = [...selected].filter((id) => !pendingAssetIds.has(id)).length;
+
+  const cancelQueuedJob = async (jobId: string) => {
+    try {
+      await api.cancelJob(jobId);
+      // A cancelled job never settles, so its toast has to be dropped by hand.
+      dropJobToast(jobId, 'Queued job cancelled');
+      refreshJobs();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Unable to cancel the job');
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -424,7 +441,7 @@ export function MotionTab() {
         </CardContent>
       </Card>
 
-      <JobQueuePanel jobs={jobs.filter((job) => job.kind === MOTION)} error={jobsError} onCancel={(jobId) => void api.cancelJob(jobId).then(refreshJobs).catch(() => toast.error('Unable to cancel the job'))} />
+      <JobQueuePanel jobs={jobs.filter((job) => job.kind === MOTION)} error={jobsError} onCancel={(jobId) => void cancelQueuedJob(jobId)} />
 
       {marquee ? (
         <div
