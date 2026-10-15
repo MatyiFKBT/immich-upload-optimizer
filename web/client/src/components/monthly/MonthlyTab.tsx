@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { parseAsBoolean, parseAsInteger, useQueryState } from 'nuqs';
 import { api } from '@/api';
 import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionConfirm';
 import { JobQueuePanel } from '@/components/monthly/JobQueuePanel';
@@ -24,6 +25,15 @@ const KIND_LABEL: Record<ActionKind, string> = {
   archive: 'Archive',
   tagArchive: 'Tag and archive',
 };
+
+// The review position lives in the URL, so a month is linkable and the Back button walks the year
+// grid and the months the user visited. Moving between the year grid and a month is navigation and
+// pushes a history entry; the archived switch is a filter and replaces the current one. The year
+// defaults to the current one and is dropped from the URL while it matches; the other two are dropped
+// whenever they are unset or false.
+const yearParser = parseAsInteger.withDefault(new Date().getFullYear()).withOptions({ history: 'push' });
+const monthParser = parseAsInteger.withOptions({ history: 'push' });
+const includeArchivedParser = parseAsBoolean.withDefault(false).withOptions({ history: 'replace' });
 
 function kindLabel(kind: ActionKind, tag: string | null): string {
   if (kind === 'tagArchive') return tag ? `Tag as “${tag}” and archive` : 'Tag and archive';
@@ -65,9 +75,9 @@ function actionCopy(kind: ActionKind, what: string, tag: string | null): { title
 type QueuedAction = PendingAction & { kind: ActionKind; tag: string | null };
 
 export function MonthlyTab({ profiles, extraButtons }: Props) {
-  const [year, setYear] = useState(() => new Date().getFullYear());
-  const [month, setMonth] = useState<number | null>(null);
-  const [includeArchived, setIncludeArchived] = useState(false);
+  const [year, setYear] = useQueryState('year', yearParser);
+  const [month, setMonth] = useQueryState('month', monthParser);
+  const [includeArchived, setIncludeArchived] = useQueryState('includeArchived', includeArchivedParser);
   const [marks, setMarks] = useState<ReadonlyMap<string, Mark>>(() => new Map());
   const [profileId, setProfileId] = useState('');
   const [pending, setPending] = useState<QueuedAction | null>(null);
@@ -214,7 +224,7 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
     <div className="space-y-5">
       <div className="flex items-center justify-end">
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Checkbox checked={includeArchived} onCheckedChange={(checked) => setIncludeArchived(checked === true)} />
+          <Checkbox checked={includeArchived} onCheckedChange={(checked) => void setIncludeArchived(checked === true)} />
           Include archived assets
         </label>
       </div>
@@ -225,8 +235,8 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
           counts={counts}
           loading={countsLoading}
           error={countsError}
-          onYearChange={setYear}
-          onOpenMonth={setMonth}
+          onYearChange={(next) => void setYear(next)}
+          onOpenMonth={(next) => void setMonth(next)}
         />
       ) : (
         <MonthView
@@ -244,7 +254,7 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
           promptsHidden={promptsHidden}
           pendingAssetIds={pendingAssetIds}
           extraButtons={extraButtons}
-          onBack={() => setMonth(null)}
+          onBack={() => void setMonth(null)}
           onMark={toggleMark}
           onProfileChange={setProfileId}
           onAction={requestAction}

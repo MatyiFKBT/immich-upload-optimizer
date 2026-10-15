@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react';
+import type { FormEvent } from 'react';
+import { parseAsString, useQueryState } from 'nuqs';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -6,6 +7,10 @@ import { Separator } from '@/components/ui/separator';
 import type { Album, AssetItem, SearchFilters } from '@/types';
 import { AssetGrid } from './AssetGrid';
 import { FIELD_CLASS } from './field';
+
+// The search form lives in the URL so a search can be linked, bookmarked, and survives a reload.
+// Field edits replace the current history entry, so typing does not pile up Back-button steps.
+const fieldParser = parseAsString.withDefault('').withOptions({ history: 'replace' });
 
 interface Props {
   albums: Album[];
@@ -36,9 +41,9 @@ export function SearchPanel({
   onToggle,
   onToggleAll,
 }: Props) {
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [albumId, setAlbumId] = useState('');
+  const [from, setFrom] = useQueryState('from', fieldParser);
+  const [to, setTo] = useQueryState('to', fieldParser);
+  const [albumId, setAlbumId] = useQueryState('albumId', fieldParser);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -58,15 +63,15 @@ export function SearchPanel({
         <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.6fr_auto]">
           <label className="grid gap-1.5 text-sm font-medium">
             From
-            <input type="date" className={FIELD_CLASS} value={from} onChange={(event) => setFrom(event.target.value)} />
+            <input type="date" className={FIELD_CLASS} value={from} onChange={(event) => void setFrom(event.target.value)} />
           </label>
           <label className="grid gap-1.5 text-sm font-medium">
             To
-            <input type="date" className={FIELD_CLASS} value={to} onChange={(event) => setTo(event.target.value)} />
+            <input type="date" className={FIELD_CLASS} value={to} onChange={(event) => void setTo(event.target.value)} />
           </label>
           <label className="grid gap-1.5 text-sm font-medium">
             Album
-            <select className={FIELD_CLASS} value={albumId} onChange={(event) => setAlbumId(event.target.value)}>
+            <select className={FIELD_CLASS} value={albumId} onChange={(event) => void setAlbumId(event.target.value)}>
               <option value="">Choose an album</option>
               {albums.map((album) => (
                 <option key={album.id} value={album.id}>

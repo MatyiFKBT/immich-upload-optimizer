@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CalendarDays, Film, Minimize2 } from 'lucide-react';
+import { parseAsStringEnum, useQueryState } from 'nuqs';
 import { api } from '@/api';
 import { CompressTab } from '@/components/compress/CompressTab';
 import { MonthlyTab } from '@/components/monthly/MonthlyTab';
@@ -9,7 +10,13 @@ import { Toaster } from '@/components/ui/sonner';
 import { cn } from '@/lib/utils';
 import type { Album, ExtraButton, ProfileOption } from '@/types';
 
+/** The three tabs, in the order they appear; the URL carries the active one and Back walks them. */
+type TabValue = 'compress' | 'monthly' | 'motion';
+const TAB_VALUES: TabValue[] = ['compress', 'monthly', 'motion'];
+const tabParser = parseAsStringEnum<TabValue>(TAB_VALUES).withDefault('compress').withOptions({ history: 'push' });
+
 export function App() {
+  const [tab, setTab] = useQueryState('tab', tabParser);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [extraButtons, setExtraButtons] = useState<ExtraButton[]>([]);
@@ -71,7 +78,7 @@ export function App() {
 
       {loadError ? <p className="mb-4 text-sm text-destructive">{loadError}</p> : null}
 
-      <Tabs defaultValue="compress" className="gap-6">
+      <Tabs value={tab} onValueChange={(value) => void setTab(value as TabValue)} className="gap-6">
         <TabsList className="w-full sm:w-fit">
           <TabsTrigger value="compress" className="text-xs sm:text-sm">
             <Minimize2 />

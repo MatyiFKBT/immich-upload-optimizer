@@ -47,6 +47,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Add a Hono/Node backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
 - Build the UI as a React SPA bundled by Vite; React reconciliation keeps asset thumbnails attached to stable element keys, so polling never re-creates or re-requests them.
 - Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a three-tab shell (Compress, Monthly cleanup, Live photos) with the shared Immich client in `web/client/src/api.ts`.
+- Keep navigational and search state in the URL with `nuqs` and its plain-React adapter (no router is needed): the open tab, the monthly review's year/month/archived switch, and the compress form's filters. Navigation pushes history so Back walks the tabs, years, and months; filters replace it.
 - Library writes go through one narrow surface: `POST/GET/DELETE /api/library/jobs` enqueues, lists and cancels jobs, and a server-side FIFO queue runs them one at a time. Compression jobs reuse the existing batch pipeline rather than adding a second write path.
 - Pin `@immich/sdk` to `3.3.0-rc.0`, matching `immich-openapi-specs.json`; use its stable nested date/album/type filter and cursor pagination rather than deprecated flat search fields.
 - The backend owns temporary downloads and candidate files and invokes only fixed, built-in optimizer profiles. Do not execute user-supplied commands or construct shell command strings from request data.
@@ -80,6 +81,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 21. Show the recognized, named people under each asset in the month view and link each face to that person's Immich page.
 22. Let `WEB_AUTH_DISABLED=true` drop the built-in Basic auth for deployments that authenticate callers in front of the service, with a startup warning, an ignored password requirement, and a visible banner in the UI.
 23. Leave archived assets out of the monthly review by default, with an *Include archived assets* toggle that loads them badged and drops the archive actions that would do nothing.
+24. Move the open tab, the monthly review's year/month/archived switch, and the compress form's filters into the URL with `nuqs`, so views are linkable and the Back button walks them.
 
 ## Safety invariants
 

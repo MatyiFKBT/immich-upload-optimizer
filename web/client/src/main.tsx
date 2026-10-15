@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { NuqsAdapter } from 'nuqs/adapters/react';
 import { App } from './App';
 import './index.css';
 
@@ -8,6 +9,8 @@ if (!container) throw new Error('The #root element is missing from index.html');
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <NuqsAdapter>
+      <App />
+    </NuqsAdapter>
   </StrictMode>,
 );

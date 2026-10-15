@@ -14,7 +14,8 @@
   "dependencies": {
     "@hono/node-server": "^2.1.4",
     "@immich/sdk": "3.3.0-rc.0",
-    "hono": "^4.13.13"
+    "hono": "^4.13.13",
+    "nuqs": "^2.10.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
