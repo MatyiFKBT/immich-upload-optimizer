@@ -356,6 +356,12 @@ export async function getMonthCounts(year: number): Promise<{ year: number; mont
  * local capture time, so the query range is widened by one day on each side and filtered exactly
  * afterwards. Immich's metadata search returns archived assets like any other, and the month view
  * reviews the timeline, so they are left out unless `includeArchived` asks for them.
+ *
+ * The exclusion has to name `locked` as well: Immich rejects any visibility filter that could still
+ * match a locked asset with 401 "Elevated permission is required" unless the session is elevated, and
+ * an explicit visibility filter also suppresses the `visibility != locked` condition Immich would
+ * otherwise add on its own. `notIn` keeps every other visibility in play, so hidden assets are
+ * returned exactly as they were before this filter existed.
  */
 export async function listMonthAssets(
   year: number,
@@ -374,7 +380,7 @@ export async function listMonthAssets(
       lte: new Date(Date.UTC(year, month, 1) + 86_400_000).toISOString(),
     },
   };
-  if (!options.includeArchived) filter.visibility = { notIn: [AssetVisibility.Archive] };
+  if (!options.includeArchived) filter.visibility = { notIn: [AssetVisibility.Archive, AssetVisibility.Locked] };
 
   const items: LibraryAsset[] = [];
   let cursor: string | undefined;

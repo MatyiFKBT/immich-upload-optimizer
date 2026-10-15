@@ -157,7 +157,7 @@
       "title": "Exclude archived assets from the monthly review by default",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "The month listing asks Immich for every visibility except archive unless GET /api/library/months/{year}/{month}?includeArchived=true says otherwise (the param is strict true/false, 400 otherwise), so archived assets no longer eat into the 3000-asset cap. The monthly tab carries an \"Include archived assets\" switch that reloads the month; archived tiles are badged and never offered an archive action, per asset or per burst group, since they already left the timeline."
+      "notes": "The month listing asks Immich for every visibility except archive and locked unless GET /api/library/months/{year}/{month}?includeArchived=true says otherwise (the param is strict true/false, 400 otherwise), so archived assets no longer eat into the 3000-asset cap. Locked is named explicitly because Immich rejects a visibility filter that could still match a locked asset with 401 'Elevated permission is required' unless the session is elevated, and any explicit visibility filter suppresses the visibility != locked condition Immich adds by itself. The monthly tab carries an 'Include archived assets' switch that reloads the month; archived tiles are badged and never offered an archive action, per asset or per burst group, since they already left the timeline."
     },
     {
       "id": "verification",
