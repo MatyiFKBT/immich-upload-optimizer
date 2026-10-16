@@ -10,9 +10,10 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { loadConfig, type AppConfig } from './config.js';
 import { abandonBatch, advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
-import { configureImmich, getMonthCounts, listAlbums, listMonthAssets, listMotionPhotos, listOptimizedAssetIds, searchImages, streamPersonThumbnail, streamThumbnail, type ThumbnailSize } from './immich.js';
+import { configureImmich, estimateMonthStorage, getMonthCounts, listAlbums, listMonthAssets, listMotionPhotos, listOptimizedAssetIds, searchImages, streamPersonThumbnail, streamThumbnail, type ThumbnailSize } from './immich.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
 import { cancelJob, enqueueJob, initializeQueue, listJobs } from './queue.js';
+import { getStats, initializeStats } from './stats.js';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
 const CLIENT_DIR = join(ROOT_DIR, 'dist', 'client');
@@ -259,6 +260,15 @@ export function createApp(config: AppConfig): Hono {
     return jsonResponse(context, 200, await getMonthCounts(year));
   });
 
+  // Sampled rather than scanned: see `estimateMonthStorage` for what an estimate covers.
+  app.get('/api/library/months/:year/storage', async (context) => {
+    const year = Number(context.req.param('year'));
+    if (!Number.isInteger(year) || year < 1900 || year > 2200) throw new HttpError(400, 'year must be a four digit year');
+    return jsonResponse(context, 200, await estimateMonthStorage(year));
+  });
+
+  app.get('/api/library/stats', (context) => jsonResponse(context, 200, getStats()));
+
   app.get('/api/library/months/:year/:month', async (context) => {
     const year = Number(context.req.param('year'));
     const month = Number(context.req.param('month'));
@@ -363,6 +373,7 @@ async function main(): Promise<void> {
   configureImmich(config.immichApiBaseUrl, config.immichApiKey);
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
   await initializeBatches(config.dataDir);
+  await initializeStats(config.dataDir);
   initializeQueue(config.extraButtons.map((button) => button.label));
 
   const server = serve({ fetch: createApp(config).fetch, hostname: config.webHost, port: config.webPort }, (info) => {

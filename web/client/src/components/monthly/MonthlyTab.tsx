@@ -10,7 +10,7 @@ import { toast } from '@/components/ui/sonner';
 import { useJobs } from '@/hooks/useJobs';
 import { useJobToasts } from '@/hooks/useJobToasts';
 import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
-import { useMonthAssets, useMonthCounts } from '@/hooks/useLibrary';
+import { useMonthAssets, useMonthCounts, useMonthStorage } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
 import type { ActionKind, ExtraButton, Job, LibraryAsset, ProfileOption } from '@/types';
 
@@ -85,6 +85,8 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
   const [promptsHidden, setPromptsHidden] = useState(() => CONFIRM_KINDS.some((kind) => isConfirmationHidden(kind)));
 
   const { counts, loading: countsLoading, error: countsError } = useMonthCounts(year);
+  // Only the year grid shows sizes, so the heavier sampling request waits until it is on screen.
+  const { months: storage, loading: storageLoading, error: storageError } = useMonthStorage(year, month === null);
   const { assets, truncated, loading, error, remove, restore } = useMonthAssets(year, month, includeArchived);
   /** Assets hidden the moment an action was queued, so a job that cannot settle them puts them back. */
   const queuedSnapshots = useRef(new Map<string, LibraryAsset>());
@@ -233,8 +235,11 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
         <YearOverview
           year={year}
           counts={counts}
+          storage={storage}
           loading={countsLoading}
+          storageLoading={storageLoading}
           error={countsError}
+          storageError={storageError}
           onYearChange={(next) => void setYear(next)}
           onOpenMonth={(next) => void setMonth(next)}
         />

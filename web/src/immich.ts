@@ -350,6 +350,122 @@ export async function getMonthCounts(year: number): Promise<{ year: number; mont
   return { year, months, total: heatmap.totalCount };
 }
 
+export interface MonthStorage {
+  month: number;
+  /** Captures Immich reports for the month, from the same heatmap the year grid counts with. */
+  count: number;
+  /** Estimated bytes the month's assets occupy. */
+  bytes: number;
+  /** How many assets the sum was taken from. */
+  sampled: number;
+  /** True when the month was too large to read in full and `bytes` was scaled from the sample. */
+  estimated: boolean;
+}
+
+const STORAGE_SAMPLE_PAGES = 4;
+const STORAGE_MONTH_WORKERS = 4;
+const STORAGE_CACHE_MS = 10 * 60 * 1000;
+
+const storageCache = new Map<number, { at: number; value: MonthStorage[] }>();
+const storageInFlight = new Map<number, Promise<MonthStorage[]>>();
+
+/**
+ * Size of one month, read from the first page of its assets. Immich aggregates no sizes, and paging
+ * a whole year of EXIF metadata would be dozens of requests, so a month that does not fit in one
+ * page is scaled from it: the estimate is the sample's average per asset times the month's capture
+ * count. Reading is only continued past the first page while that page held nothing from the month,
+ * which a single very busy first day can cause.
+ */
+async function sampleMonthStorage(year: number, month: number, count: number): Promise<MonthStorage> {
+  const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+  const filter: { trashedAt: { eq: null }; takenAt: { gte: string; lte: string } } = {
+    trashedAt: { eq: null },
+    takenAt: {
+      gte: new Date(Date.UTC(year, month - 1, 1) - 86_400_000).toISOString(),
+      lte: new Date(Date.UTC(year, month, 1) + 86_400_000).toISOString(),
+    },
+  };
+
+  let cursor: string | undefined;
+  let bytes = 0;
+  let sampled = 0;
+  let complete = false;
+  for (let page = 0; page < STORAGE_SAMPLE_PAGES; page += 1) {
+    const response = await searchAssets({
+      metadataSearchDto: {
+        filter,
+        size: MONTH_PAGE_SIZE,
+        withExif: true,
+        ...(cursor ? { cursor } : {}),
+        orderBy: { direction: AssetOrder.Asc, field: SearchOrderField.FileCreatedAt },
+      },
+    });
+    for (const asset of response.assets.items) {
+      const capturedAt = asset.localDateTime || asset.fileCreatedAt;
+      if (!capturedAt.startsWith(monthPrefix)) continue;
+      sampled += 1;
+      bytes += asset.exifInfo?.fileSizeInByte ?? 0;
+    }
+    const nextCursor = response.assets.nextCursor ?? null;
+    if (!nextCursor || response.assets.items.length === 0) {
+      complete = true;
+      break;
+    }
+    if (sampled > 0) break;
+    cursor = nextCursor;
+  }
+
+  const estimated = !complete;
+  const scale = estimated && sampled > 0 ? count / sampled : 1;
+  return { month, count, bytes: Math.round(bytes * scale), sampled, estimated };
+}
+
+/** Per-month storage estimates for a year, newest requests served from a short-lived cache. */
+export async function estimateMonthStorage(year: number): Promise<{ year: number; months: MonthStorage[] }> {
+  const cached = storageCache.get(year);
+  if (cached && Date.now() - cached.at < STORAGE_CACHE_MS) return { year, months: cached.value };
+
+  const running = storageInFlight.get(year);
+  if (running) return { year, months: await running };
+
+  const pending = (async (): Promise<MonthStorage[]> => {
+    const counts = await getMonthCounts(year);
+    const populated = counts.months.filter((entry) => entry.count > 0);
+    const months: MonthStorage[] = [];
+    let next = 0;
+    // A handful of months at a time keeps the request from turning into a burst against Immich.
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const entry = populated[next];
+        next += 1;
+        if (!entry) return;
+        // One unreadable month only costs its own number: the rest of the year still gets estimates.
+        months.push(
+          await sampleMonthStorage(year, entry.month, entry.count).catch(() => ({
+            month: entry.month,
+            count: entry.count,
+            bytes: 0,
+            sampled: 0,
+            estimated: true,
+          })),
+        );
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(STORAGE_MONTH_WORKERS, populated.length) }, worker));
+    months.sort((left, right) => left.month - right.month);
+    return months;
+  })();
+
+  storageInFlight.set(year, pending);
+  try {
+    const months = await pending;
+    storageCache.set(year, { at: Date.now(), value: months });
+    return { year, months };
+  } finally {
+    storageInFlight.delete(year);
+  }
+}
+
 /**
  * Every asset whose local capture time falls in the given month, newest first, capped at
  * `MONTH_ASSET_LIMIT`. `takenAt` is compared in UTC while the month is derived from the asset's

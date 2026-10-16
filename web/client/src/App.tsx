@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, Film, Minimize2 } from 'lucide-react';
+import { BarChart3, CalendarDays, Film, Minimize2 } from 'lucide-react';
 import { parseAsStringEnum, useQueryState } from 'nuqs';
 import { api } from '@/api';
 import { CompressTab } from '@/components/compress/CompressTab';
 import { MonthlyTab } from '@/components/monthly/MonthlyTab';
 import { MotionTab } from '@/components/motion/MotionTab';
+import { StatsTab } from '@/components/stats/StatsTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Toaster } from '@/components/ui/sonner';
 import { cn } from '@/lib/utils';
 import type { Album, ExtraButton, ProfileOption } from '@/types';
 
-/** The three tabs, in the order they appear; the URL carries the active one and Back walks them. */
-type TabValue = 'compress' | 'monthly' | 'motion';
-const TAB_VALUES: TabValue[] = ['compress', 'monthly', 'motion'];
+/** The tabs, in the order they appear; the URL carries the active one and Back walks them. */
+type TabValue = 'compress' | 'monthly' | 'motion' | 'stats';
+const TAB_VALUES: TabValue[] = ['compress', 'monthly', 'motion', 'stats'];
 const tabParser = parseAsStringEnum<TabValue>(TAB_VALUES).withDefault('compress').withOptions({ history: 'push' });
 
 export function App() {
@@ -20,7 +21,6 @@ export function App() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [extraButtons, setExtraButtons] = useState<ExtraButton[]>([]);
-  const [authDisabled, setAuthDisabled] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState('');
 
@@ -33,7 +33,6 @@ export function App() {
         setAlbums(albumResponse.albums);
         setProfiles(profileResponse.profiles);
         setExtraButtons(configResponse.extraButtons);
-        setAuthDisabled(configResponse.authDisabled);
         setConnected(true);
       } catch (error) {
         if (cancelled) return;
@@ -55,14 +54,6 @@ export function App() {
           <p className="text-sm text-muted-foreground">Compare smaller versions, keep the library tidy month by month, and drop live-photo videos.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {authDisabled ? (
-            <span
-              className="rounded-full border border-destructive/40 px-3 py-1.5 text-xs font-medium text-destructive"
-              title="WEB_AUTH_DISABLED is set: this service does not authenticate callers. Protect it with your own proxy."
-            >
-              No authentication
-            </span>
-          ) : null}
           <span
             className={cn(
               'rounded-full border px-3 py-1.5 text-xs font-medium',
@@ -94,6 +85,10 @@ export function App() {
             <span className="sm:hidden">Live</span>
             <span className="hidden sm:inline">Live photos</span>
           </TabsTrigger>
+          <TabsTrigger value="stats" className="text-xs sm:text-sm">
+            <BarChart3 />
+            Stats
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="compress">
           <CompressTab albums={albums} profiles={profiles} />
@@ -103,6 +98,9 @@ export function App() {
         </TabsContent>
         <TabsContent value="motion">
           <MotionTab />
+        </TabsContent>
+        <TabsContent value="stats">
+          <StatsTab />
         </TabsContent>
       </Tabs>
 

@@ -30,7 +30,7 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
   return (
     <div
       className={cn(
-        'asset-tile group relative flex flex-col gap-2 rounded-xl border bg-card p-2 transition-colors',
+        'group relative flex flex-col gap-2 rounded-xl border bg-card p-2 transition-colors',
         mark === 'keep' && 'border-success ring-2 ring-success/40',
         mark === 'trash' && 'border-destructive ring-2 ring-destructive/40',
         mark === undefined && 'border-border',

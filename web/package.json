@@ -14,6 +14,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.4",
     "@immich/sdk": "3.3.0-rc.0",
+    "@tanstack/react-virtual": "^3.14.20",
     "hono": "^4.13.13",
     "nuqs": "^2.10.2"
   },

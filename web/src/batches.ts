@@ -16,6 +16,7 @@ import {
   type AssetSnapshot,
 } from './immich.js';
 import { compatibleProfiles, generateCandidates, PROFILES, type Candidate, type ProfileId } from './optimizer.js';
+import { recordReplacement } from './stats.js';
 
 const MAX_BATCH_ASSETS = 100;
 const MAX_PARALLEL_ITEMS = 3;
@@ -343,6 +344,13 @@ async function replaceItem(batch: Batch, item: BatchItem, candidate: Candidate):
   }
   item.status = 'replaced';
   item.message = batch.deleteOriginal ? 'Replacement verified; original deleted through Immich' : 'Replacement verified; original kept';
+  recordReplacement({
+    before: item.sourceSize,
+    after: candidate.size,
+    // Only a removed original frees space; a kept one leaves both files in the library.
+    reclaimed: item.originalDeleted,
+    at: Date.now(),
+  });
 }
 
 export interface BatchView {

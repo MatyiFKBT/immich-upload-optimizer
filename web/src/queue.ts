@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { applyBatchResults, createBatch, getBatch, BatchRequestError, type BatchView } from './batches.js';
 import { archiveAssets, getAssetBrief, getAssetSnapshot, tagAndArchiveAssets, trashAssets, unlinkMotionVideo } from './immich.js';
 import { bestProfileFor, type ProfileId } from './optimizer.js';
+import { recordJob } from './stats.js';
 
 export type JobKind = 'compress' | 'trash' | 'archive' | 'tagArchive' | 'motion';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
@@ -25,6 +26,12 @@ export interface JobView {
   skipped: number;
   failed: number;
   message: string | null;
+}
+
+/** What a job learned that the job view does not already carry; only its own kind fills it in. */
+interface JobOutcome {
+  /** Motion jobs: how many videos were unlinked from a still and moved to the trash. */
+  motionVideos: number;
 }
 
 const MAX_JOBS = 200;
@@ -115,22 +122,33 @@ async function drain(): Promise<void> {
       if (!job) return;
       job.status = 'running';
       job.startedAt = Date.now();
+      let outcome: JobOutcome | undefined;
       try {
-        await executeJob(job);
+        outcome = await executeJob(job);
         job.status = 'done';
       } catch (error) {
         job.status = 'failed';
         job.message = error instanceof Error ? error.message : 'The job failed';
-      } finally {
-        job.finishedAt = Date.now();
       }
+      job.finishedAt = Date.now();
+      const finishedAt = job.finishedAt;
+      // Recorded here and not in the job itself, so every job lands in the local record exactly once,
+      // whether it finished or failed.
+      recordJob({
+        kind: job.kind,
+        failed: job.status === 'failed',
+        settled: job.resolvedIds.length,
+        motionVideos: outcome?.motionVideos ?? 0,
+        tag: job.tag,
+        finishedAt,
+      });
     }
   } finally {
     draining = false;
   }
 }
 
-async function executeJob(job: JobView): Promise<void> {
+async function executeJob(job: JobView): Promise<JobOutcome | undefined> {
   if (job.kind === 'trash') {
     await trashAssets(job.assetIds);
     job.resolvedIds = job.assetIds;
@@ -151,8 +169,7 @@ async function executeJob(job: JobView): Promise<void> {
     return;
   }
   if (job.kind === 'motion') {
-    await runUnlinkMotion(job);
-    return;
+    return runUnlinkMotion(job);
   }
   await runCompression(job);
 }
@@ -161,7 +178,7 @@ async function executeJob(job: JobView): Promise<void> {
  * Detaches and trashes the motion video behind each still. The video is only trashed after Immich
  * confirms the link is gone, so a still never ends up pointing at a trashed video.
  */
-async function runUnlinkMotion(job: JobView): Promise<void> {
+async function runUnlinkMotion(job: JobView): Promise<JobOutcome> {
   const resolved: string[] = [];
   const unlinkedIds: string[] = [];
   const failures: string[] = [];
@@ -243,6 +260,7 @@ async function runUnlinkMotion(job: JobView): Promise<void> {
   job.failed += failures.length;
   const notes = [...failures, ...lastCompressionNotes];
   job.message = `${parts.join(', ')}${notes.length > 0 ? ` — ${notes.slice(0, 2).join(' · ')}` : ''}`;
+  return { motionVideos: unlinked };
 }
 
 

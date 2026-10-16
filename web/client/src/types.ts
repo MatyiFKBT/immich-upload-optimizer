@@ -173,3 +173,46 @@ export interface MonthAssets {
   truncated: boolean;
   items: LibraryAsset[];
 }
+
+export interface MonthStorage {
+  month: number;
+  /** Captures the month holds, from the same heatmap the year grid counts with. */
+  count: number;
+  /** Estimated bytes the month's assets occupy. */
+  bytes: number;
+  /** How many assets the sum was taken from; fewer than `count` means `bytes` was scaled up. */
+  sampled: number;
+  estimated: boolean;
+}
+
+export interface MonthStorageResult {
+  year: number;
+  months: MonthStorage[];
+}
+
+/** What the server counted locally for one month, or for the whole history. */
+export interface StatsBucket {
+  /** Assets a smaller replacement was uploaded for. */
+  optimized: number;
+  /** Bytes of the originals that were removed for those replacements, and of their replacements. */
+  bytesBefore: number;
+  bytesAfter: number;
+  savedBytes: number;
+  savedPercent: number;
+  trashed: number;
+  archived: number;
+  motionVideos: number;
+  jobs: number;
+  failed: number;
+}
+
+export interface Stats {
+  /** Epoch milliseconds of the first and the latest recorded activity; 0 when nothing was recorded. */
+  startedAt: number;
+  updatedAt: number;
+  totals: StatsBucket;
+  /** Newest month first; months without activity are not listed. */
+  months: (StatsBucket & { month: string })[];
+  /** Assets archived per configured button tag, most used first. */
+  byTag: { tag: string; assets: number }[];
+}

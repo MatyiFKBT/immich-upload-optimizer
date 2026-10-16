@@ -2,12 +2,15 @@ import { Archive, Minimize2, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatGroupTime, suggestedKeeper, type BurstGroup, type Mark } from '@/lib/bursts';
+import { GRID_GAP } from '@/lib/monthGrid';
 import type { ActionKind, ExtraButton } from '@/types';
 import { ExtraActionButton } from './ExtraActionButton';
 import { PhotoTile } from './PhotoTile';
 
 interface Props {
   group: BurstGroup;
+  /** Track count of the month grid, so a burst lines up with the single images around it. */
+  columns: number;
   marks: ReadonlyMap<string, Mark>;
   pending: ReadonlySet<string>;
   profileId: string;
@@ -17,7 +20,7 @@ interface Props {
   onAction: (kind: ActionKind, assetIds: string[], tag?: string) => void;
 }
 
-export function BurstGroupCard({ group, marks, pending, profileId, busy, extraButtons, onMark, onAction }: Props) {
+export function BurstGroupCard({ group, columns, marks, pending, profileId, busy, extraButtons, onMark, onAction }: Props) {
   const keeper = suggestedKeeper(group);
   const actionable = group.items.filter((item) => !pending.has(item.id));
   const trashed = actionable.filter((item) => marks.get(item.id) === 'trash').map((item) => item.id);
@@ -42,7 +45,7 @@ export function BurstGroupCard({ group, marks, pending, profileId, busy, extraBu
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: `${GRID_GAP}px` }}>
         {group.items.map((item) => (
           <PhotoTile
             key={item.id}

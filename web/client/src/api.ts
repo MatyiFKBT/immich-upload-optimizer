@@ -1,4 +1,4 @@
-import type { Album, Batch, ExtraButton, Job, JobKind, MonthAssets, MonthCounts, MotionPhotos, ProfileOption, SearchFilters, SearchResult } from './types';
+import type { Album, Batch, ExtraButton, Job, JobKind, MonthAssets, MonthCounts, MonthStorageResult, MotionPhotos, ProfileOption, SearchFilters, SearchResult, Stats } from './types';
 
 export class ApiError extends Error {}
 
@@ -48,6 +48,8 @@ export const api = {
   abandon: (batchId: string) =>
     request<{ accepted: boolean }>(`/api/batches/${encodeURIComponent(batchId)}/abandon`, { method: 'POST', body: {} }),
   monthCounts: (year: number) => request<MonthCounts>(`/api/library/months/${year}`),
+  monthStorage: (year: number) => request<MonthStorageResult>(`/api/library/months/${year}/storage`),
+  stats: () => request<Stats>('/api/library/stats'),
   monthAssets: (year: number, month: number, includeArchived: boolean) =>
     request<MonthAssets>(`/api/library/months/${year}/${month}?includeArchived=${includeArchived ? 'true' : 'false'}`),
   motionPhotos: (cursor?: string) => request<MotionPhotos>(`/api/library/motion${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
@@ -57,4 +59,4 @@ export const api = {
   cancelJob: (jobId: string) => request<{ accepted: boolean }>(`/api/library/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
 };
 
-export type { AssetItem, Batch, ExtraButton, Job, JobKind, LibraryAsset, MonthAssets, MonthCounts, MotionPhoto, MotionPhotos, SearchFilters } from './types';
+export type { AssetItem, Batch, ExtraButton, Job, JobKind, LibraryAsset, MonthAssets, MonthCounts, MonthStorage, MonthStorageResult, MotionPhoto, MotionPhotos, SearchFilters, Stats, StatsBucket } from './types';

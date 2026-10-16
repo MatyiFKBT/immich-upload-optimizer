@@ -1,11 +1,14 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useGridBox } from '@/hooks/useGridBox';
 import { buildTimeline, type Mark } from '@/lib/bursts';
 import { formatBytes } from '@/lib/format';
+import { columnsForWidth, GRID_GAP, gridRows } from '@/lib/monthGrid';
 import { monthLabel } from '@/lib/months';
 import type { ActionKind, ExtraButton, LibraryAsset, ProfileOption } from '@/types';
 import { AssetActions } from './AssetActions';
@@ -34,6 +37,15 @@ interface Props {
   onResetPrompts: () => void;
 }
 
+/** Rows rendered beyond the viewport, so a fast scroll does not run into empty space. */
+const OVERSCAN_ROWS = 4;
+/** Thumbnail, name line and action row of one tile, before its own height is measured. */
+const TILE_CHROME = 150;
+/** Header and action bar of a burst card, which wraps the same tiles. */
+const BURST_CHROME = 140;
+/** Padding inside a burst card: the tiles in it have a little less room than the outer grid. */
+const BURST_INSET = 24;
+
 export function MonthView({
   year,
   month,
@@ -59,6 +71,34 @@ export function MonthView({
   const blocks = useMemo(() => buildTimeline(assets), [assets]);
   const totalSize = assets.reduce((sum, asset) => sum + (asset.size ?? 0), 0);
   const optimizedCount = assets.filter((asset) => asset.optimized).length;
+
+  const { ref: gridRef, width, scrollMargin } = useGridBox();
+  const columns = columnsForWidth(width);
+  const rows = useMemo(() => gridRows(blocks, columns), [blocks, columns]);
+
+  // A month can hold thousands of assets, so only the rows around the viewport are in the document.
+  // These heights are estimates that the rendered rows immediately replace with their measured ones;
+  // they only have to be close enough that the scrollbar does not jump while the first rows settle.
+  const estimateRowHeight = useCallback(
+    (index: number): number => {
+      // Before the container is measured, a plausible tile width keeps the first estimate in range.
+      const gridWidth = width > 0 ? width : 180 * columns;
+      const columnWidth = (gridWidth - GRID_GAP * (columns - 1)) / columns;
+      const row = rows[index];
+      if (!row || row.kind === 'singles') return columnWidth * 0.75 + TILE_CHROME;
+      const innerColumn = (gridWidth - BURST_INSET - GRID_GAP * (columns - 1)) / columns;
+      return Math.ceil(row.group.items.length / columns) * (innerColumn * 0.75 + TILE_CHROME) + BURST_CHROME;
+    },
+    [rows, columns, width],
+  );
+
+  const virtualizer = useWindowVirtualizer({
+    count: rows.length,
+    estimateSize: estimateRowHeight,
+    overscan: OVERSCAN_ROWS,
+    scrollMargin,
+    getItemKey: useCallback((index: number) => rows[index]?.key ?? index, [rows]),
+  });
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -105,57 +145,74 @@ export function MonthView({
 
         <p className="text-xs text-muted-foreground">
           Ordered from the 1st. Bursts share a capture minute and keep their own action bar; single images carry their own buttons. Click an
-          image to open it in Immich. Actions are queued and run one after another, so you can keep working.
+          image to open it in Immich. Actions are queued and run one after another, so you can keep working. Only the rows you are looking at
+          are rendered, so a month of thousands of assets stays responsive.
         </p>
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-        {loading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {Array.from({ length: 10 }, (_unused, index) => (
-              <Skeleton key={index} className="aspect-4/3 rounded-xl" />
-            ))}
-          </div>
-        ) : null}
-
-        {!loading
-          ? blocks.map((block) =>
-              block.kind === 'group' ? (
-                <BurstGroupCard
-                  key={`group:${block.key}`}
-                  group={{ key: block.key, items: block.items }}
-                  marks={marks}
-                  pending={pendingAssetIds}
-                  profileId={profileId}
-                  busy={busy}
-                  extraButtons={extraButtons}
-                  onMark={onMark}
-                  onAction={onAction}
-                />
-              ) : (
-                <div key={`singles:${block.assets[0]?.id ?? 'empty'}`} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                  {block.assets.map((asset) => (
-                    <PhotoTile
-                      key={asset.id}
-                      asset={asset}
-                      footer={
-                        <AssetActions
-                          disabled={busy || pendingAssetIds.has(asset.id)}
-                          compressible={!asset.isVideo && asset.profiles.some((profile) => profile.id === profileId)}
-                          archived={asset.visibility === 'archive'}
+        <div ref={gridRef}>
+          {loading ? (
+            <div className="grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: `${GRID_GAP}px` }}>
+              {Array.from({ length: columns * 2 }, (_unused, index) => (
+                <Skeleton key={index} className="aspect-4/3 rounded-xl" />
+              ))}
+            </div>
+          ) : (
+            <div className="relative" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+              {virtualizer.getVirtualItems().map((item) => {
+                const row = rows[item.index];
+                if (!row) return null;
+                return (
+                  <div
+                    key={item.key}
+                    data-index={item.index}
+                    ref={virtualizer.measureElement}
+                    className="absolute top-0 left-0 w-full"
+                    style={{ transform: `translateY(${item.start - scrollMargin}px)` }}
+                  >
+                    {row.kind === 'group' ? (
+                      <div className="pb-3">
+                        <BurstGroupCard
+                          group={row.group}
+                          columns={columns}
+                          marks={marks}
+                          pending={pendingAssetIds}
+                          profileId={profileId}
+                          busy={busy}
                           extraButtons={extraButtons}
-                          onCompress={() => onAction('compress', [asset.id])}
-                          onTrash={() => onAction('trash', [asset.id])}
-                          onArchive={() => onAction('archive', [asset.id])}
-                          onExtraAction={(button) => onAction('tagArchive', [asset.id], button.label)}
+                          onMark={onMark}
+                          onAction={onAction}
                         />
-                      }
-                    />
-                  ))}
-                </div>
-              ),
-            )
-          : null}
+                      </div>
+                    ) : (
+                      <div className="grid pb-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: `${GRID_GAP}px` }}>
+                        {row.assets.map((asset) => (
+                          <PhotoTile
+                            key={asset.id}
+                            asset={asset}
+                            footer={
+                              <AssetActions
+                                disabled={busy || pendingAssetIds.has(asset.id)}
+                                compressible={!asset.isVideo && asset.profiles.some((profile) => profile.id === profileId)}
+                                archived={asset.visibility === 'archive'}
+                                extraButtons={extraButtons}
+                                onCompress={() => onAction('compress', [asset.id])}
+                                onTrash={() => onAction('trash', [asset.id])}
+                                onArchive={() => onAction('archive', [asset.id])}
+                                onExtraAction={(button) => onAction('tagArchive', [asset.id], button.label)}
+                              />
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {!loading && assets.length === 0 && !error ? (
           <p className="text-sm text-muted-foreground">

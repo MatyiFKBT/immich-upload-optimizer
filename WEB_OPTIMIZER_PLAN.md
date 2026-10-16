@@ -22,11 +22,13 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 
 ### Monthly cleanup tab (second tab)
 
-- Year grid of 12 month boxes with per-month capture counts, taken from one `calendar-heatmap?type=Taken` request (requires the `user.read` scope); prev/next year navigation.
-- Opening a month loads every asset captured in it (images and videos), newest first, thumbnails only, capped at 3000 assets with a visible truncation notice. Archived assets are excluded unless the *Include archived assets* switch is on; the archived ones shown that way are badged and never offered an archive action. The query range is widened by a day on each side because `takenAt` is UTC while the month is derived from the asset's local capture time, then filtered exactly.
+- Year grid of 12 month boxes with per-month capture counts, taken from one `calendar-heatmap?type=Taken` request (requires the `user.read` scope); prev/next year navigation. Each box also carries a storage estimate for that month and is tinted against the heaviest month of the year, from `GET /api/library/months/{year}/storage`.
+- The storage estimate is sampled, because Immich aggregates no sizes: every populated month is read with the first page of its assets (`withExif`) and scaled by the month's capture count, a month that fits in its first page is exact, and the grid marks scaled numbers with `~`. Months are sampled four at a time and the year is cached for ten minutes.
+- Opening a month loads every asset captured in it (images and videos), oldest first, thumbnails only, capped at 3000 assets with a visible truncation notice. Archived assets are excluded unless the *Include archived assets* switch is on; the archived ones shown that way are badged and never offered an archive action. The query range is widened by a day on each side because `takenAt` is UTC while the month is derived from the asset's local capture time, then filtered exactly.
+- The month is rendered as a virtualized stream: the timeline is cut into rows (a burst card, or up to N single images) and only the rows around the viewport are mounted, with each row's real height measured after its first paint. The track count is read from the grid's own width and drives both the CSS grid and the row layout, so a row always fits the tracks it is rendered in; widths stop at four columns on desktop so a thumbnail stays readable as a photo.
 - Assets sharing a capture minute (EXIF `localDateTime` truncated to the minute) form a burst group; the largest file in a group is highlighted as the suggested keep. Left click marks keep, right click marks trash, clicking the same mark clears it.
 - Each burst group has its own action bar: trash the trash-marked images, compress the keep-marked images (smaller candidate enforced, original deleted only after verification), or archive the keep-marked images. Buttons are disabled when their set is empty, and each action confirms first.
-- Ungrouped assets each get three per-asset buttons: compress and delete original, trash, archive.
+- Ungrouped assets each get three per-asset buttons: compress and delete original, trash, archive. The trash button carries the destructive color, since it is the one action on the tile that cannot be undone from this app.
 - A compression-profile selector in the month toolbar chooses the profile used by every compress action in that tab.
 - Trash uses `DELETE /assets` with `force: false` (reversible Immich trash), archive uses `PUT /assets` with `visibility: "archive"`.
 - The month is rendered as one stream ordered oldest first: assets sharing a capture minute collapse into a burst block, and consecutive singles collapse into ordinary grids, so the month reads from the 1st onwards.
@@ -42,12 +44,20 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Runs through the same job queue as the other library actions, so it is non-blocking and cancellable while queued.
 - An opt-in *compress afterwards* flag re-compresses each unlinked still with the profile chosen automatically per format (`bestProfileFor`: AVIF for JPEG and HEIC/HEIF, because JXL would not render in a browser given the app bypasses the proxy's download conversion). Stills are grouped per profile and compressed with the existing batch pipeline, delete-original on, after the videos are gone so a replacement never inherits a dead motion link.
 
+### Stats tab (fourth tab)
+
+- A local record of what this service did to the library, kept in `stats.json` under `WEB_DATA_DIR` so it survives a restart. Immich only knows the current state of an asset, so "what was reclaimed" cannot be asked of it afterwards.
+- Reclaimed space is counted where an original is actually removed, by the optimizer itself; a run that kept its originals counts as a replaced asset but reclaims no bytes. Job outcomes (trashed, archived, dropped motion videos, jobs run, failures) and per-tag archive counts are recorded once per finished job by the queue.
+- `GET /api/library/stats` serves the totals, a per-month breakdown, and the per-tag counts. The tab shows the headline numbers, a month-by-month table with a reclaimed-space bar, and the tags that archived assets.
+- The file is versioned, written with a temp-file rename and coalesced writes, and a damaged file is set aside as `stats.json.corrupt` rather than overwritten, so a bad write cannot silently reset the history.
+
 ## Architecture and deployment
 
 - Add a Hono/Node backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
 - Build the UI as a React SPA bundled by Vite; React reconciliation keeps asset thumbnails attached to stable element keys, so polling never re-creates or re-requests them.
-- Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a three-tab shell (Compress, Monthly cleanup, Live photos) with the shared Immich client in `web/client/src/api.ts`.
+- Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a four-tab shell (Compress, Monthly cleanup, Live photos, Stats) with the shared Immich client in `web/client/src/api.ts`.
 - Keep navigational and search state in the URL with `nuqs` and its plain-React adapter (no router is needed): the open tab, the monthly review's year/month/archived switch, and the compress form's filters. Navigation pushes history so Back walks the tabs, years, and months; filters replace it.
+- Long lists virtualize rather than paginate: the month grid renders through `@tanstack/react-virtual` with the window as its scroll element, so a mounted month holds the rows around the viewport instead of thousands of tiles. The container's measured width decides the track count, which keeps the CSS grid and the row layout on the same number, and every row is measured after its first paint so estimated heights only fill the gap until then.
 - Library writes go through one narrow surface: `POST/GET/DELETE /api/library/jobs` enqueues, lists and cancels jobs, and a server-side FIFO queue runs them one at a time. Compression jobs reuse the existing batch pipeline rather than adding a second write path.
 - Pin `@immich/sdk` to `3.3.0-rc.0`, matching `immich-openapi-specs.json`; use its stable nested date/album/type filter and cursor pagination rather than deprecated flat search fields.
 - The backend owns temporary downloads and candidate files and invokes only fixed, built-in optimizer profiles. Do not execute user-supplied commands or construct shell command strings from request data.
@@ -79,9 +89,14 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 19. Add operator-defined tag-and-archive buttons through `EXTRA_BUTTONS`, validated on the server and applied through the job queue.
 20. Open an asset in the user's own Immich from its thumbnail, through Immich's link helper.
 21. Show the recognized, named people under each asset in the month view and link each face to that person's Immich page.
-22. Let `WEB_AUTH_DISABLED=true` drop the built-in Basic auth for deployments that authenticate callers in front of the service, with a startup warning, an ignored password requirement, and a visible banner in the UI.
+22. Let `WEB_AUTH_DISABLED=true` drop the built-in Basic auth for deployments that authenticate callers in front of the service, with a startup warning, an ignored password requirement, and the mode reported through `GET /api/config`.
 23. Leave archived assets out of the monthly review by default, with an *Include archived assets* toggle that loads them badged and drops the archive actions that would do nothing.
 24. Move the open tab, the monthly review's year/month/archived switch, and the compress form's filters into the URL with `nuqs`, so views are linkable and the Back button walks them.
+25. Virtualize the month grid with `@tanstack/react-virtual` and drive its track count from the container's measured width, so a month of thousands of assets mounts only the rows around the viewport.
+26. Enlarge the desktop thumbnails: stop the month grids at four columns instead of five.
+27. Color the per-asset trash button in the month view with the destructive color, so the one irreversible action on a tile is visible at a glance.
+28. Keep a local, versioned record of what this service did (`stats.json` in the data directory), counted where an original is really removed and once per finished job, and show it in a fourth *Stats* tab.
+29. Estimate the storage size of every month in the year grid and color each month box by its share of the year's heaviest month.
 
 ## Safety invariants
 
@@ -115,4 +130,9 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Buttons defined in `EXTRA_BUTTONS` tag the selected assets with their label and archive them, a tag that no configured button declares is rejected, and the assets only leave the timeline after Immich confirms the tag was applied.
 - Clicking a thumbnail opens that asset in the user's own Immich through the link helper.
 - Each asset in the month view lists the people Immich recognized in it, and clicking a face opens that person's Immich page.
-- `WEB_AUTH_DISABLED=true` serves the UI and API without the Basic-auth challenge, needs no password, reports the mode in `/api/config` and the UI header, and logs a warning that the service is unauthenticated; any other value stops the container.
+- `WEB_AUTH_DISABLED=true` serves the UI and API without the Basic-auth challenge and needs no password, reports the mode in `/api/config`, and logs a warning that the service is unauthenticated; any other value stops the container. The UI shows no authentication notice, since a deployment that authenticates callers in front of the service should look the same as any other.
+- A month of thousands of assets scrolls without mounting a tile per asset: only the rows around the viewport are in the document, and a row is never laid out for a different number of tracks than it is rendered in.
+- Desktop thumbnails in the monthly view are larger than before: the grid stops at four columns instead of five.
+- The trash action under a single asset is red, so the destructive choice is recognizable without a tooltip.
+- Every finished job and every removed original is counted in `stats.json` under the data directory, the record survives a container restart, a damaged file is kept aside instead of overwritten, and the *Stats* tab shows the totals, the month-by-month breakdown, and the per-tag archive counts. A replacement that kept its original adds to the replaced count but not to the reclaimed bytes.
+- Each month box in the year grid carries a storage estimate, scaled numbers are marked as estimates, and the boxes are tinted against the heaviest month of the year.

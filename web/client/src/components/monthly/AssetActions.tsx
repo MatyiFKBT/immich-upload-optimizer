@@ -1,6 +1,7 @@
 import { Archive, Minimize2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import type { ExtraButton } from '@/types';
 import { ExtraActionButton } from './ExtraActionButton';
 
@@ -15,6 +16,9 @@ interface Props {
   onArchive: () => void;
   onExtraAction: (button: ExtraButton) => void;
 }
+
+/** Trashing is the one action on a tile that cannot be undone here, so it carries the destructive color. */
+const TRASH_TONE = 'border-destructive/40 text-destructive hover:border-destructive hover:bg-destructive/10 hover:text-destructive';
 
 export function AssetActions({ disabled, compressible, archived, extraButtons, onCompress, onTrash, onArchive, onExtraAction }: Props) {
   const actions = [
@@ -38,7 +42,7 @@ export function AssetActions({ disabled, compressible, archived, extraButtons, o
             <Button
               variant="outline"
               size="icon"
-              className="size-10 sm:size-8"
+              className={cn('size-10 sm:size-8', action.key === 'trash' && TRASH_TONE)}
               disabled={disabled || !action.enabled}
               aria-label={action.label}
               onClick={action.onClick}

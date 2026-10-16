@@ -1,9 +1,9 @@
 {
   "project": "Immich Web Media Optimizer",
   "overall_progress_percent": 96,
-  "completed_steps": 23,
-  "total_steps": 24,
-  "updated_at": "2026-10-15",
+  "completed_steps": 27,
+  "total_steps": 28,
+  "updated_at": "2026-10-16",
   "steps": [
     {
       "id": "plan-and-tracker",
@@ -150,7 +150,7 @@
       "title": "Allow disabling the built-in HTTP Basic auth",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "WEB_AUTH_DISABLED=true skips the Basic-auth middleware and the password requirement so a proxy (Pocket ID behind oauth2-proxy, Authelia, forward auth) can authenticate callers. Only true/false are accepted; the flag is reported through GET /api/config and as a header banner, and main() logs a warning that every request is unauthenticated. Cross-origin write checks still apply."
+      "notes": "WEB_AUTH_DISABLED=true skips the Basic-auth middleware and the password requirement so a proxy (Pocket ID behind oauth2-proxy, Authelia, forward auth) can authenticate callers. Only true/false are accepted; the flag is reported through GET /api/config and main() logs a warning that every request is unauthenticated. The UI carries no authentication notice: a deployment that authenticates callers in front of the service renders exactly like any other. Cross-origin write checks still apply."
     },
     {
       "id": "monthly-archived-toggle",
@@ -165,6 +165,34 @@
       "status": "completed",
       "progress_percent": 100,
       "notes": "nuqs 2.10.2 with its plain-React adapter (NuqsAdapter in main.tsx; no router is needed, the adapter drives the History API directly). ?tab= names the open tab, the monthly review owns year/month/includeArchived, and the compress form owns from/to/albumId. Tab, year, and month push history so the Back button walks tabs, years, and months; the archived switch and the form fields replace the current entry so typing and toggling do not pile up history steps. Defaults (compress, the current year, month unset, archived off) are dropped from the URL."
+    },
+    {
+      "id": "month-grid-virtualization",
+      "title": "Virtualize the month grid and enlarge the desktop thumbnails",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The month view renders through @tanstack/react-virtual 3.14 with useWindowVirtualizer: the timeline is cut into rows (a burst card, or up to N single images) and only the rows around the viewport are in the document, so a 3000-asset month keeps a handful of rows mounted instead of thousands of tiles. Row heights are measured (measureElement with data-index) and estimates only fill the gap until a row is seen. The track count is read from the grid's own width with a ResizeObserver and drives both the CSS grid and the row chunking, so the two cannot disagree; desktop stops at four columns instead of five, which makes every tile about a third larger. content-visibility was dropped from the month tiles because a skipped tile reports its intrinsic size and would poison the measurement. Verified by typecheck and a production Vite build only."
+    },
+    {
+      "id": "red-trash-icon",
+      "title": "Color the per-asset trash action red",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The icon-only trash button under a single asset in the month view uses the destructive color for its icon, border and hover fill, so the destructive action is recognizable without reading the tooltip. The Keep/Trash pair inside a burst already used it."
+    },
+    {
+      "id": "local-stats-store",
+      "title": "Count activity locally in stats.json and show it in a Stats tab",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "web/src/stats.ts keeps a versioned record at WEB_DATA_DIR/stats.json (0600, written atomically and coalesced every 500ms; a damaged file is moved aside as stats.json.corrupt instead of being overwritten). Replacements are reported by the optimizer at the point where an original is really removed, so reclaimed bytes are only counted when disk was actually freed; job outcomes (trashed, archived, motion videos dropped, jobs, failures) are recorded once per job by the queue, and tag-and-archive jobs keep a per-tag count. GET /api/library/stats serves totals, per-month buckets, and per-tag counts, and a fourth tab (Stats) shows reclaimed space, replacements, trashed, archived, and dropped live-video counts plus a month-by-month table. Verified against the built server with the round-trip and corruption cases."
+    },
+    {
+      "id": "month-storage-estimates",
+      "title": "Show an estimated storage size per month in the year grid",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "GET /api/library/months/{year}/storage returns one entry per populated month. Immich aggregates no sizes, so each month is sampled with the first page of its assets (withExif) and scaled by the month's heatmap count; a month that fits in its first page is measured exactly and paging only continues while that page held nothing from the month. Months are sampled four at a time and a year is cached for ten minutes; an unreadable month only loses its own estimate. The year grid shows the size (prefixed with ~ when it was scaled), tints each box from success through primary to destructive against the heaviest month of the year, and states that the numbers are estimates."
     },
     {
       "id": "verification",

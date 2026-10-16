@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/api';
-import type { LibraryAsset, MonthCounts } from '@/types';
+import type { LibraryAsset, MonthCounts, MonthStorage } from '@/types';
 
 export function useMonthCounts(year: number) {
   const [counts, setCounts] = useState<MonthCounts | null>(null);
@@ -29,6 +29,43 @@ export function useMonthCounts(year: number) {
   }, [year]);
 
   return { counts, loading, error };
+}
+
+/**
+ * Storage estimates for a year, fetched only while the year grid is on screen: the request samples
+ * every populated month, so it is much heavier than the counts and must not run behind the month view.
+ */
+export function useMonthStorage(year: number, enabled: boolean) {
+  const [months, setMonths] = useState<MonthStorage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    setLoading(true);
+    // Sizes belong to one year; showing the previous year's numbers while the new ones load would be
+    // worse than showing none.
+    setMonths([]);
+    void (async () => {
+      try {
+        const result = await api.monthStorage(year);
+        if (cancelled) return;
+        setMonths(result.months);
+        setError('');
+      } catch (caught) {
+        if (cancelled) return;
+        setError(caught instanceof Error ? caught.message : 'Unable to estimate the storage per month');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [year, enabled]);
+
+  return { months, loading, error };
 }
 
 export function useMonthAssets(year: number | null, month: number | null, includeArchived: boolean) {

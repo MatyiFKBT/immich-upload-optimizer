@@ -90,7 +90,8 @@
   }
 }
 
-/* Month grids can hold thousands of tiles; skip layout and paint for offscreen ones. */
+/* The compress and live-photo grids render every tile at once; skip layout and paint for offscreen
+   ones. The monthly grid is virtualized instead, so its rows are measured and must not be skipped. */
 .asset-tile {
   content-visibility: auto;
   contain-intrinsic-size: 180px 200px;
