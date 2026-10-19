@@ -86,10 +86,10 @@ export type AssetVisibility = 'archive' | 'timeline' | 'hidden' | 'locked';
 
 export type ActionKind = 'compress' | 'trash' | 'archive' | 'tagArchive';
 
-export type JobKind = ActionKind | 'motion';
+export type JobKind = ActionKind | 'motion' | 'review';
 
 /** Kinds that can be confirmed; `motion` belongs to the live-photo tab only. */
-export type ConfirmKind = JobKind;
+export type ConfirmKind = ActionKind | 'motion';
 
 /** A cleanup button defined by the operator in `EXTRA_BUTTONS`. */
 export interface ExtraButton {
@@ -136,6 +136,12 @@ export interface LibraryAsset {
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
 
+export interface ReviewDecision {
+  assetId: string;
+  disposition: 'keep' | 'trash';
+  tags: string[];
+}
+
 export interface Job {
   id: string;
   kind: JobKind;
@@ -146,6 +152,11 @@ export interface Job {
   tag: string | null;
   /** Live-photo jobs only: the stills are compressed with their best profile after unlinking. */
   compress: boolean;
+  /** Focused monthly review decisions; null for other job kinds. */
+  reviewDecisions: ReviewDecision[] | null;
+  /** Focused monthly review counts. */
+  trashCount: number;
+  tagCounts: Record<string, number>;
   status: JobStatus;
   createdAt: number;
   startedAt: number | null;
@@ -213,6 +224,6 @@ export interface Stats {
   totals: StatsBucket;
   /** Newest month first; months without activity are not listed. */
   months: (StatsBucket & { month: string })[];
-  /** Assets archived per configured button tag, most used first. */
+  /** Successful configured-tag applications, whether archived or kept, most used first. */
   byTag: { tag: string; assets: number }[];
 }

@@ -12,7 +12,7 @@ import { loadConfig, type AppConfig } from './config.js';
 import { abandonBatch, advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
 import { configureImmich, estimateMonthStorage, getMonthCounts, listAlbums, listMonthAssets, listMotionPhotos, listOptimizedAssetIds, searchImages, streamPersonThumbnail, streamThumbnail, type ThumbnailSize } from './immich.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
-import { cancelJob, enqueueJob, initializeQueue, listJobs } from './queue.js';
+import { cancelJob, enqueueJob, initializeQueue, listJobs, type ReviewDecision } from './queue.js';
 import { getStats, initializeStats } from './stats.js';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
@@ -102,6 +102,32 @@ function assetIdList(value: unknown): string[] {
   const ids = value as string[];
   if (new Set(ids).size !== ids.length) throw new HttpError(400, 'Asset IDs must be unique');
   return ids;
+}
+
+function reviewDecisionList(value: unknown, assetIds: readonly string[]): ReviewDecision[] {
+  if (!Array.isArray(value) || value.length !== assetIds.length) {
+    throw new HttpError(400, 'Focused review must provide one decision for every asset ID');
+  }
+  const decisions: ReviewDecision[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new HttpError(400, 'Each focused review decision must be an object');
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.assetId !== 'string' || !validateAssetId(raw.assetId) || !assetIds.includes(raw.assetId)) {
+      throw new HttpError(400, 'Every focused review decision must refer to a requested asset');
+    }
+    if (raw.disposition !== 'keep' && raw.disposition !== 'trash') throw new HttpError(400, 'A focused review decision must be keep or trash');
+    if (!Array.isArray(raw.tags) || raw.tags.length > 8 || raw.tags.some((tag) => typeof tag !== 'string' || tag.length === 0 || tag.length > 48)) {
+      throw new HttpError(400, 'Focused review tags must be configured tag names');
+    }
+    if (raw.disposition === 'trash' && raw.tags.length > 0) throw new HttpError(400, 'Trash decisions cannot carry tags');
+    const tags = raw.tags as string[];
+    if (new Set(tags).size !== tags.length) throw new HttpError(400, 'Focused review tags must be unique');
+    decisions.push({ assetId: raw.assetId, disposition: raw.disposition, tags });
+  }
+  if (new Set(decisions.map((decision) => decision.assetId)).size !== assetIds.length) {
+    throw new HttpError(400, 'Every focused review asset must have exactly one decision');
+  }
+  return decisions;
 }
 
 async function indexHtml(): Promise<string> {
@@ -302,8 +328,8 @@ export function createApp(config: AppConfig): Hono {
     const body = await readJson(context);
     const assetIds = assetIdList(body.assetIds);
     const kind = body.kind;
-    if (kind !== 'compress' && kind !== 'trash' && kind !== 'archive' && kind !== 'tagArchive' && kind !== 'motion') {
-      throw new HttpError(400, 'kind must be compress, trash, archive, tagArchive, or motion');
+    if (kind !== 'compress' && kind !== 'trash' && kind !== 'archive' && kind !== 'tagArchive' && kind !== 'motion' && kind !== 'review') {
+      throw new HttpError(400, 'kind must be compress, trash, archive, tagArchive, motion, or review');
     }
     let profileId: string | null = null;
     if (kind === 'compress') {
@@ -318,13 +344,15 @@ export function createApp(config: AppConfig): Hono {
     if (body.tag !== undefined && typeof body.tag !== 'string') {
       throw new HttpError(400, 'tag must be a string');
     }
+    const decisions = kind === 'review' ? reviewDecisionList(body.decisions, assetIds) : undefined;
     return jsonResponse(context, 202, enqueueJob({
       kind,
       assetIds,
       profileId,
       compress: kind === 'motion' && body.compress === true,
-      // enqueueJob rejects a tag that no configured extra button declares.
+      // Both tag-archive and focused-review tags are limited to configured extra buttons.
       tag: typeof body.tag === 'string' ? body.tag : null,
+      ...(decisions ? { decisions } : {}),
     }));
   });
 

@@ -1,4 +1,4 @@
-import { Loader2, Tag, Trash2, X } from 'lucide-react';
+import { CheckCheck, Loader2, Tag, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,8 @@ function jobLabel(job: Job): string {
       return job.tag ? `Tag as “${job.tag}” and archive` : 'Tag and archive';
     case 'motion':
       return 'Unlink and trash motion video';
+    case 'review':
+      return 'Focused monthly review';
   }
 }
 
@@ -61,6 +63,7 @@ export function JobQueuePanel({ jobs, error, onCancel }: Props) {
               {job.status === 'running' ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
               {job.kind === 'trash' ? <Trash2 className="size-4 shrink-0 text-muted-foreground" /> : null}
               {job.kind === 'tagArchive' ? <Tag className="size-4 shrink-0 text-muted-foreground" /> : null}
+              {job.kind === 'review' ? <CheckCheck className="size-4 shrink-0 text-muted-foreground" /> : null}
               <div className="min-w-0">
                 <p className="text-xs font-medium">
                   {jobLabel(job)} · {job.assetIds.length} asset(s)

@@ -608,13 +608,49 @@ export async function archiveAssets(ids: string[]): Promise<void> {
  * many assets it tagged, and archiving only happens once that count matches, so no asset can leave
  * the timeline without carrying its tag.
  */
-export async function tagAndArchiveAssets(ids: string[], tagName: string): Promise<void> {
+const configuredTagIds = new Map<string, string>();
+
+async function configuredTagId(tagName: string): Promise<string> {
+  const cached = configuredTagIds.get(tagName);
+  if (cached) return cached;
   const [tag] = await upsertTags({ tagUpsertDto: { tags: [tagName] } });
   if (!tag) throw new Error(`Immich did not return the "${tagName}" tag`);
-  const result = await bulkTagAssets({ tagBulkAssetsDto: { assetIds: ids, tagIds: [tag.id] } });
+  configuredTagIds.set(tagName, tag.id);
+  return tag.id;
+}
+
+/** Applies a configured tag without changing visibility, and verifies Immich accepted every asset. */
+export async function tagAssets(ids: string[], tagName: string): Promise<void> {
+  const tagId = await configuredTagId(tagName);
+  const result = await bulkTagAssets({ tagBulkAssetsDto: { assetIds: ids, tagIds: [tagId] } });
   if (result.count !== ids.length) {
-    throw new Error(`Immich tagged ${result.count} of ${ids.length} asset(s) with "${tagName}"; none were archived`);
+    throw new Error(`Immich tagged ${result.count} of ${ids.length} asset(s) with "${tagName}"`);
   }
+}
+
+/**
+ * Adds one configured tag to a kept asset only when it is not already present. The pre-check makes
+ * retries after a partial stack result idempotent and keeps the local tag-application count exact.
+ */
+export async function tagAssetIfMissing(assetId: string, tagName: string): Promise<boolean> {
+  const tagId = await configuredTagId(tagName);
+  const before = await getAssetSnapshot(assetId);
+  if (before.tagIds.includes(tagId)) return false;
+  try {
+    await tagAssets([assetId], tagName);
+    return true;
+  } catch (error) {
+    // A lost response can leave Immich with the tag even though the write call failed. Confirm the
+    // state before reporting failure so retrying the stack does not duplicate work or stats.
+    const after = await getAssetSnapshot(assetId).catch(() => null);
+    if (after?.tagIds.includes(tagId)) return false;
+    throw error;
+  }
+}
+
+/** Applies `tagName` (created on first use) to every asset and then archives them. */
+export async function tagAndArchiveAssets(ids: string[], tagName: string): Promise<void> {
+  await tagAssets(ids, tagName);
   await archiveAssets(ids);
 }
 

@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { applyBatchResults, createBatch, getBatch, BatchRequestError, type BatchView } from './batches.js';
-import { archiveAssets, getAssetBrief, getAssetSnapshot, tagAndArchiveAssets, trashAssets, unlinkMotionVideo } from './immich.js';
+import { archiveAssets, getAssetBrief, getAssetSnapshot, tagAndArchiveAssets, tagAssetIfMissing, trashAssets, unlinkMotionVideo } from './immich.js';
 import { bestProfileFor, type ProfileId } from './optimizer.js';
 import { recordJob } from './stats.js';
 
-export type JobKind = 'compress' | 'trash' | 'archive' | 'tagArchive' | 'motion';
+export type JobKind = 'compress' | 'trash' | 'archive' | 'tagArchive' | 'motion' | 'review';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export interface ReviewDecision {
+  assetId: string;
+  disposition: 'keep' | 'trash';
+  tags: string[];
+}
 
 export interface JobView {
   id: string;
@@ -18,6 +24,11 @@ export interface JobView {
   tag: string | null;
   /** Live-photo jobs only: also compress each still with its best profile after unlinking. */
   compress: boolean;
+  /** Focused monthly review jobs: per-asset decisions and tags to apply to kept assets. */
+  reviewDecisions: ReviewDecision[] | null;
+  /** Focused monthly review statistics. */
+  trashCount: number;
+  tagCounts: Record<string, number>;
   status: JobStatus;
   createdAt: number;
   startedAt: number | null;
@@ -62,13 +73,36 @@ export function listJobs(): JobView[] {
   return [...jobs].reverse();
 }
 
-export function enqueueJob(options: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean; tag?: string | null }): JobView {
+export function enqueueJob(options: { kind: JobKind; assetIds: string[]; profileId: string | null; compress?: boolean; tag?: string | null; decisions?: ReviewDecision[] }): JobView {
   // The tag comes from the client, so it is only accepted when an operator configured it in
   // EXTRA_BUTTONS; a request can never create or apply an arbitrary tag.
   const tag = options.kind === 'tagArchive' ? options.tag ?? null : null;
   if (options.kind === 'tagArchive') {
     if (!tag) throw new BatchRequestError(400, 'A tag-and-archive job needs the tag of a configured button');
     if (!allowedTags.includes(tag)) throw new BatchRequestError(400, 'That tag is not configured in EXTRA_BUTTONS');
+  }
+  if (options.kind === 'review') {
+    const decisions = options.decisions;
+    if (!decisions || decisions.length !== options.assetIds.length || decisions.length === 0) {
+      throw new BatchRequestError(400, 'A focused review job needs one decision for every asset');
+    }
+    const decisionIds = new Set<string>();
+    for (const decision of decisions) {
+      if (!options.assetIds.includes(decision.assetId) || decisionIds.has(decision.assetId)) {
+        throw new BatchRequestError(400, 'Focused review decisions must match unique asset IDs');
+      }
+      if (decision.disposition !== 'keep' && decision.disposition !== 'trash') {
+        throw new BatchRequestError(400, 'A focused review decision must be keep or trash');
+      }
+      if (!Array.isArray(decision.tags) || (decision.disposition === 'trash' && decision.tags.length > 0)) {
+        throw new BatchRequestError(400, 'Only kept assets can have tags');
+      }
+      if (new Set(decision.tags).size !== decision.tags.length || decision.tags.some((name) => !allowedTags.includes(name))) {
+        throw new BatchRequestError(400, 'Focused review tags must come from configured EXTRA_BUTTONS');
+      }
+      decisionIds.add(decision.assetId);
+    }
+    if (decisionIds.size !== options.assetIds.length) throw new BatchRequestError(400, 'Every focused review asset needs exactly one decision');
   }
 
   const job: JobView = {
@@ -79,6 +113,9 @@ export function enqueueJob(options: { kind: JobKind; assetIds: string[]; profile
     profileId: options.profileId,
     tag,
     compress: options.compress === true,
+    reviewDecisions: options.kind === 'review' ? options.decisions!.map((decision) => ({ ...decision, tags: [...decision.tags] })) : null,
+    trashCount: 0,
+    tagCounts: {},
     status: 'queued',
     createdAt: Date.now(),
     startedAt: null,
@@ -125,7 +162,7 @@ async function drain(): Promise<void> {
       let outcome: JobOutcome | undefined;
       try {
         outcome = await executeJob(job);
-        job.status = 'done';
+        job.status = job.kind === 'review' && job.failed > 0 ? 'failed' : 'done';
       } catch (error) {
         job.status = 'failed';
         job.message = error instanceof Error ? error.message : 'The job failed';
@@ -140,6 +177,8 @@ async function drain(): Promise<void> {
         settled: job.resolvedIds.length,
         motionVideos: outcome?.motionVideos ?? 0,
         tag: job.tag,
+        reviewTrashed: job.trashCount,
+        reviewTagCounts: job.tagCounts,
         finishedAt,
       });
     }
@@ -168,10 +207,44 @@ async function executeJob(job: JobView): Promise<JobOutcome | undefined> {
     job.message = `Tagged ${job.assetIds.length} asset(s) “${job.tag}” and archived them`;
     return;
   }
+  if (job.kind === 'review') {
+    await runFocusedReview(job);
+    return;
+  }
   if (job.kind === 'motion') {
     return runUnlinkMotion(job);
   }
   await runCompression(job);
+}
+
+/**
+ * Applies one stack's explicit decisions independently. Keeps are only tagged, never archived; trash
+ * uses Immich's reversible non-forced trash. Failed assets remain unresolved so the client can offer
+ * a safe, deliberate retry.
+ */
+async function runFocusedReview(job: JobView): Promise<void> {
+  const decisions = job.reviewDecisions ?? [];
+  const failures: string[] = [];
+  for (const decision of decisions) {
+    try {
+      if (decision.disposition === 'trash') {
+        await trashAssets([decision.assetId]);
+        job.trashCount += 1;
+      } else {
+        for (const tag of decision.tags) {
+          const added = await tagAssetIfMissing(decision.assetId, tag);
+          if (added) job.tagCounts[tag] = (job.tagCounts[tag] ?? 0) + 1;
+        }
+      }
+      job.resolvedIds.push(decision.assetId);
+    } catch (error) {
+      job.failed += 1;
+      failures.push(`${decision.assetId}: ${error instanceof Error ? error.message : 'action failed'}`);
+    }
+  }
+  const tagCount = Object.values(job.tagCounts).reduce((sum, count) => sum + count, 0);
+  const summary = `Reviewed ${job.resolvedIds.length} of ${decisions.length} asset(s) · ${job.trashCount} moved to Immich trash · ${tagCount} tag(s) applied`;
+  job.message = failures.length > 0 ? `${summary} · ${failures.length} need review — ${failures.slice(0, 2).join(' · ')}` : summary;
 }
 
 /**

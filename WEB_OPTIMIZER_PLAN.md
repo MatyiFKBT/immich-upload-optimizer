@@ -25,6 +25,8 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Year grid of 12 month boxes with per-month capture counts, taken from one `calendar-heatmap?type=Taken` request (requires the `user.read` scope); prev/next year navigation. Each box also carries a storage estimate for that month and is tinted against the heaviest month of the year, from `GET /api/library/months/{year}/storage`.
 - The storage estimate is sampled, because Immich aggregates no sizes: every populated month is read with the first page of its assets (`withExif`) and scaled by the month's capture count, a month that fits in its first page is exact, and the grid marks scaled numbers with `~`. Months are sampled four at a time and the year is cached for ten minutes.
 - Opening a month loads every asset captured in it (images and videos), oldest first, thumbnails only, capped at 3000 assets with a visible truncation notice. Archived assets are excluded unless the *Include archived assets* switch is on; the archived ones shown that way are badged and never offered an archive action. The query range is widened by a day on each side because `takenAt` is UTC while the month is derived from the asset's local capture time, then filtered exactly.
+- An optional *Focused review* mode fills the viewport with one chronological stack at a time. Still images captured in the same local minute sit side by side (mobile uses a large snap carousel); videos remain as one-item stacks. Clicking the left/right half marks keep/trash, kept items may receive configured `EXTRA_BUTTONS` tags without being archived, and nothing is applied until *Apply & next*. *Skip for now* leaves the stack untouched, and a day overview shows remaining, queued, and reviewed stacks. Drafts and completed decisions are saved per month in the browser; a missing in-flight job is treated as uncertain and is never retried automatically.
+- The focused mode uses `@tanstack/react-hotkeys` with an exclusive scope: Left/K keeps, Right/X stages trash, Z undoes, Enter applies and advances, S skips, O opens the day overview, and Escape returns to the month grid.
 - The month is rendered as a virtualized stream: the timeline is cut into rows (a burst card, or up to N single images) and only the rows around the viewport are mounted, with each row's real height measured after its first paint. The track count is read from the grid's own width and drives both the CSS grid and the row layout, so a row always fits the tracks it is rendered in; widths stop at four columns on desktop so a thumbnail stays readable as a photo.
 - Assets sharing a capture minute (EXIF `localDateTime` truncated to the minute) form a burst group; the largest file in a group is highlighted as the suggested keep. Left click marks keep, right click marks trash, clicking the same mark clears it.
 - Each burst group has its own action bar: trash the trash-marked images, compress the keep-marked images (smaller candidate enforced, original deleted only after verification), or archive the keep-marked images. Buttons are disabled when their set is empty, and each action confirms first.
@@ -47,8 +49,8 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 ### Stats tab (fourth tab)
 
 - A local record of what this service did to the library, kept in `stats.json` under `WEB_DATA_DIR` so it survives a restart. Immich only knows the current state of an asset, so "what was reclaimed" cannot be asked of it afterwards.
-- Reclaimed space is counted where an original is actually removed, by the optimizer itself; a run that kept its originals counts as a replaced asset but reclaims no bytes. Job outcomes (trashed, archived, dropped motion videos, jobs run, failures) and per-tag archive counts are recorded once per finished job by the queue.
-- `GET /api/library/stats` serves the totals, a per-month breakdown, and the per-tag counts. The tab shows the headline numbers, a month-by-month table with a reclaimed-space bar, and the tags that archived assets.
+- Reclaimed space is counted where an original is actually removed, by the optimizer itself; a run that kept its originals counts as a replaced asset but reclaims no bytes. Job outcomes (trashed, archived, dropped motion videos, jobs run, failures) and configured-tag applications are recorded once per finished job by the queue.
+- `GET /api/library/stats` serves the totals, a per-month breakdown, and the per-tag counts. The tab shows the headline numbers, a month-by-month table with a reclaimed-space bar, and the tags applied by cleanup buttons, including non-archiving Focused review tags.
 - The file is versioned, written with a temp-file rename and coalesced writes, and a damaged file is set aside as `stats.json.corrupt` rather than overwritten, so a bad write cannot silently reset the history.
 
 ## Architecture and deployment
@@ -56,7 +58,8 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Add a Hono/Node backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
 - Build the UI as a React SPA bundled by Vite; React reconciliation keeps asset thumbnails attached to stable element keys, so polling never re-creates or re-requests them.
 - Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a four-tab shell (Compress, Monthly cleanup, Live photos, Stats) with the shared Immich client in `web/client/src/api.ts`.
-- Keep navigational and search state in the URL with `nuqs` and its plain-React adapter (no router is needed): the open tab, the monthly review's year/month/archived switch, and the compress form's filters. Navigation pushes history so Back walks the tabs, years, and months; filters replace it.
+- Keep navigational and search state in the URL with `nuqs` and its plain-React adapter (no router is needed): the open tab, the monthly review's year/month/archived/focused-mode switch, and the compress form's filters. Navigation pushes history so Back walks the tabs, years, and months; filters replace it.
+- Use `@tanstack/react-hotkeys` for opt-in, scoped desktop shortcuts in the full-screen review; shortcuts do not fire inside inputs, tag controls, or dialogs.
 - Long lists virtualize rather than paginate: the month grid renders through `@tanstack/react-virtual` with the window as its scroll element, so a mounted month holds the rows around the viewport instead of thousands of tiles. The container's measured width decides the track count, which keeps the CSS grid and the row layout on the same number, and every row is measured after its first paint so estimated heights only fill the gap until then.
 - Library writes go through one narrow surface: `POST/GET/DELETE /api/library/jobs` enqueues, lists and cancels jobs, and a server-side FIFO queue runs them one at a time. Compression jobs reuse the existing batch pipeline rather than adding a second write path.
 - Pin `@immich/sdk` to `3.3.0-rc.0`, matching `immich-openapi-specs.json`; use its stable nested date/album/type filter and cursor pagination rather than deprecated flat search fields.
@@ -75,7 +78,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 5. Implement the upload → copy tags/albums → verify → optional delete transaction. Fail closed: never delete the original on an upload, metadata, verification, or communication error.
 6. Implement the minimal UI for search, image selection, profile selection, per-image comparison or single-profile batch review, progress, and explicit apply/skip actions.
 7. Add the web Docker target and deployment documentation without building the image.
-8. Do not run builds, tests, or smoke checks here; the user will validate the web app and container in their environment.
+8. Run the web typecheck, focused-review unit tests, and production build locally; do not build a Docker image or make live Immich mutations for verification.
 9. Add the monthly library endpoints: per-month capture counts, a full-month asset listing, and the job endpoints that enqueue, list and cancel library jobs, all validated per request.
 10. Add the tab shell and convert every tab to Tailwind CSS v4 with shadcn/ui components.
 11. Add the monthly cleanup flow: year grid, month view with same-minute burst groups, keep/trash marking, per-group and per-asset actions with confirmation, and the compression-profile selector.
@@ -97,6 +100,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 27. Color the per-asset trash button in the month view with the destructive color, so the one irreversible action on a tile is visible at a glance.
 28. Keep a local, versioned record of what this service did (`stats.json` in the data directory), counted where an original is really removed and once per finished job, and show it in a fourth *Stats* tab.
 29. Estimate the storage size of every month in the year grid and color each month box by its share of the year's heaviest month.
+30. Add opt-in, full-screen monthly focused review with local-minute photo stacks, responsive left/right decisions, tag-only keep actions, day progress, safe draft recovery, a per-stack review job, and scoped TanStack keyboard shortcuts.
 
 ## Safety invariants
 
@@ -120,7 +124,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - The repository contains deployment instructions and a progress JSON that accurately reflects implementation and verification status.
 - The monthly tab shows per-month capture counts for a year and loads a selected month as thumbnails only.
 - Assets captured in the same minute are grouped, keep/trash marks drive the per-group actions, and ungrouped assets expose compress, trash, and archive per asset.
-- Trash uses the non-forced delete so it stays restorable in Immich, and every action is confirmed before it runs.
+- Trash uses the non-forced delete so it stays restorable in Immich; standard cleanup actions are confirmed and focused review requires an explicit per-stack Apply action.
 - The live-photo tab lists stills with a paired motion video and can drop the video alone, leaving the image, its metadata and its album memberships intact, and supports click, shift-click, drag-box, Cmd/Ctrl+A and Esc selection.
 - Library actions are queued and run one after another, so a user can start many without waiting for any one to finish, and a queued job can be cancelled.
 - A replacement carries the `optimized` tag and the month view marks assets that already have it.
@@ -134,5 +138,9 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - A month of thousands of assets scrolls without mounting a tile per asset: only the rows around the viewport are in the document, and a row is never laid out for a different number of tracks than it is rendered in.
 - Desktop thumbnails in the monthly view are larger than before: the grid stops at four columns instead of five.
 - The trash action under a single asset is red, so the destructive choice is recognizable without a tooltip.
-- Every finished job and every removed original is counted in `stats.json` under the data directory, the record survives a container restart, a damaged file is kept aside instead of overwritten, and the *Stats* tab shows the totals, the month-by-month breakdown, and the per-tag archive counts. A replacement that kept its original adds to the replaced count but not to the reclaimed bytes.
+- Every finished job and every removed original is counted in `stats.json` under the data directory, the record survives a container restart, a damaged file is kept aside instead of overwritten, and the *Stats* tab shows the totals, the month-by-month breakdown, and configured-tag application counts. A replacement that kept its original adds to the replaced count but not to the reclaimed bytes.
 - Each month box in the year grid carries a storage estimate, scaled numbers are marked as estimates, and the boxes are tinted against the heaviest month of the year.
+- Focused review is opt-in and leaves the regular month grid unchanged; stacks are chronological, photos in a local capture minute are shown together, and videos are never silently dropped.
+- Clicking the left/right half stages Keep/Trash without mutating Immich; tags on keeps do not archive, and Apply & next enqueues only configured tags and reversible trash actions.
+- The day overview reports remaining and queued stacks; local drafts survive reloads, and a job missing after restart is treated as unknown until the user explicitly verifies Immich.
+- Keyboard shortcuts are scoped to Focused review and suspended in inputs and dialogs; the same decisions remain available through touch-friendly buttons.

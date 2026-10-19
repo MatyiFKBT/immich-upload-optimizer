@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -31,6 +31,7 @@ interface Props {
   pendingAssetIds: ReadonlySet<string>;
   extraButtons: readonly ExtraButton[];
   onBack: () => void;
+  onStartFocused: () => void;
   onMark: (assetId: string, mark: Mark) => void;
   onProfileChange: (profileId: string) => void;
   onAction: (kind: ActionKind, assetIds: string[], tag?: string) => void;
@@ -62,6 +63,7 @@ export function MonthView({
   pendingAssetIds,
   extraButtons,
   onBack,
+  onStartFocused,
   onMark,
   onProfileChange,
   onAction,
@@ -122,6 +124,10 @@ export function MonthView({
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {busy ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
+            <Button variant="default" size="sm" className="h-10 sm:h-9" onClick={onStartFocused}>
+              <Maximize2 />
+              Focused review
+            </Button>
             {promptsHidden ? (
               <Button variant="ghost" size="sm" onClick={onResetPrompts}>
                 Re-enable prompts

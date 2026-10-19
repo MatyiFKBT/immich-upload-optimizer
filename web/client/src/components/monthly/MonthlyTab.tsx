@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { parseAsBoolean, parseAsInteger, useQueryState } from 'nuqs';
 import { api } from '@/api';
 import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionConfirm';
@@ -12,12 +12,14 @@ import { useJobToasts } from '@/hooks/useJobToasts';
 import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { useMonthAssets, useMonthCounts, useMonthStorage } from '@/hooks/useLibrary';
 import type { Mark } from '@/lib/bursts';
-import type { ActionKind, ExtraButton, Job, LibraryAsset, ProfileOption } from '@/types';
+import type { ActionKind, ExtraButton, Job, LibraryAsset, ProfileOption, ReviewDecision } from '@/types';
 
 interface Props {
   profiles: ProfileOption[];
   extraButtons: readonly ExtraButton[];
 }
+
+const FocusedReview = lazy(() => import('@/components/monthly/FocusedReview').then((module) => ({ default: module.FocusedReview })));
 
 const KIND_LABEL: Record<ActionKind, string> = {
   compress: 'Compress and delete original',
@@ -34,6 +36,7 @@ const KIND_LABEL: Record<ActionKind, string> = {
 const yearParser = parseAsInteger.withDefault(new Date().getFullYear()).withOptions({ history: 'push' });
 const monthParser = parseAsInteger.withOptions({ history: 'push' });
 const includeArchivedParser = parseAsBoolean.withDefault(false).withOptions({ history: 'replace' });
+const focusReviewParser = parseAsBoolean.withDefault(false).withOptions({ history: 'replace' });
 
 function kindLabel(kind: ActionKind, tag: string | null): string {
   if (kind === 'tagArchive') return tag ? `Tag as “${tag}” and archive` : 'Tag and archive';
@@ -78,10 +81,12 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
   const [year, setYear] = useQueryState('year', yearParser);
   const [month, setMonth] = useQueryState('month', monthParser);
   const [includeArchived, setIncludeArchived] = useQueryState('includeArchived', includeArchivedParser);
+  const [focusReview, setFocusReview] = useQueryState('focus', focusReviewParser);
   const [marks, setMarks] = useState<ReadonlyMap<string, Mark>>(() => new Map());
   const [profileId, setProfileId] = useState('');
   const [pending, setPending] = useState<QueuedAction | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cancelledReviewJobs, setCancelledReviewJobs] = useState<ReadonlySet<string>>(() => new Set());
   const [promptsHidden, setPromptsHidden] = useState(() => CONFIRM_KINDS.some((kind) => isConfirmationHidden(kind)));
 
   const { counts, loading: countsLoading, error: countsError } = useMonthCounts(year);
@@ -96,6 +101,13 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
     (job: Job) => {
       const kind = job.kind;
       if (kind === 'motion') return; // the live-photo tab owns its own jobs
+      if (kind === 'review') {
+        const resolved = new Set(job.resolvedIds);
+        const trashed = (job.reviewDecisions ?? []).filter((decision) => decision.disposition === 'trash' && resolved.has(decision.assetId)).map((decision) => decision.assetId);
+        remove(trashed);
+        settleJobToast(job);
+        return;
+      }
       // `resolvedIds` holds exactly the assets the job settled (replaced, trashed, archived, or a
       // deliberate skip); anything else it was given is still in the library and comes back.
       const affected = job.resolvedIds;
@@ -183,6 +195,21 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
     }
   };
 
+  const submitFocusedReview = useCallback(async (decisions: ReviewDecision[]) => {
+    const assetIds = decisions.map((decision) => decision.assetId);
+    const request = watchJobToast(
+      api.enqueueJob({ kind: 'review', assetIds, profileId: null, decisions }),
+      {
+        loading: `Applying ${assetIds.length} focused review decision(s)`,
+        success: (job) => job.message ?? 'Focused review stack finished',
+        error: (error) => `Focused review failed — ${error instanceof Error ? error.message : 'unknown error'}`,
+      },
+    );
+    const job = await request;
+    refreshJobs();
+    return job;
+  }, [refreshJobs, watchJobToast]);
+
   const requestAction = (kind: ActionKind, assetIds: string[], tag: string | null = null) => {
     if (assetIds.length === 0) return;
     if (isConfirmationHidden(kind)) {
@@ -207,7 +234,9 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
 
   const cancelQueuedJob = async (jobId: string) => {
     try {
+      const cancelled = jobs.find((job) => job.id === jobId);
       await api.cancelJob(jobId);
+      if (cancelled?.kind === 'review') setCancelledReviewJobs((previous) => new Set([...previous, jobId]));
       // A cancelled job never settles, so its toast has to be dropped by hand.
       dropJobToast(jobId, 'Queued job cancelled');
       refreshJobs();
@@ -243,6 +272,23 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
           onYearChange={(next) => void setYear(next)}
           onOpenMonth={(next) => void setMonth(next)}
         />
+      ) : focusReview ? (
+        <Suspense fallback={<div className="fixed inset-0 z-[60] grid place-items-center bg-background text-sm text-muted-foreground">Loading focused review…</div>}>
+          <FocusedReview
+            year={year}
+            month={month}
+            assets={assets}
+            loading={loading}
+            error={error}
+            truncated={truncated}
+            includeArchived={includeArchived}
+            extraButtons={extraButtons}
+            jobs={jobs}
+            cancelledReviewJobs={cancelledReviewJobs}
+            onBack={() => void setFocusReview(false)}
+            onQueue={submitFocusedReview}
+          />
+        </Suspense>
       ) : (
         <MonthView
           year={year}
@@ -260,6 +306,7 @@ export function MonthlyTab({ profiles, extraButtons }: Props) {
           pendingAssetIds={pendingAssetIds}
           extraButtons={extraButtons}
           onBack={() => void setMonth(null)}
+          onStartFocused={() => void setFocusReview(true)}
           onMark={toggleMark}
           onProfileChange={setProfileId}
           onAction={requestAction}

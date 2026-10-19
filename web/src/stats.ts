@@ -12,7 +12,7 @@ import { join } from 'node:path';
  * bigger lie than a smaller number.
  */
 export interface JobRecord {
-  kind: 'compress' | 'trash' | 'archive' | 'tagArchive' | 'motion';
+  kind: 'compress' | 'trash' | 'archive' | 'tagArchive' | 'motion' | 'review';
   failed: boolean;
   /** Assets it settled: replaced, trashed, archived, or deliberately skipped. */
   settled: number;
@@ -20,6 +20,10 @@ export interface JobRecord {
   motionVideos: number;
   /** `tagArchive` jobs only: the tag applied before archiving. */
   tag: string | null;
+  /** Focused review jobs only: assets actually moved to the reversible Immich trash. */
+  reviewTrashed: number;
+  /** Focused review jobs only: successful tag applications by configured tag. */
+  reviewTagCounts: Record<string, number>;
   finishedAt: number;
 }
 
@@ -59,7 +63,7 @@ export interface StatsView {
   totals: StatsBucket;
   /** Newest month first; only months with recorded activity are listed. */
   months: ({ month: string } & StatsBucket)[];
-  /** Assets archived per `EXTRA_BUTTONS` tag, most used first. */
+  /** Configured-tag applications, whether archived or kept, most used first. */
   byTag: { tag: string; assets: number }[];
 }
 
@@ -189,11 +193,15 @@ export function recordJob(record: JobRecord): void {
     target.jobs += 1;
     if (record.failed) target.failed += 1;
     if (record.kind === 'trash') target.trashed += record.settled;
+    if (record.kind === 'review') target.trashed += record.reviewTrashed;
     if (record.kind === 'archive' || record.kind === 'tagArchive') target.archived += record.settled;
     if (record.kind === 'motion') target.motionVideos += record.motionVideos;
   }
   if (record.tag !== null && record.settled > 0) {
     store.byTag[record.tag] = (store.byTag[record.tag] ?? 0) + record.settled;
+  }
+  for (const [tag, count] of Object.entries(record.reviewTagCounts)) {
+    if (count > 0) store.byTag[tag] = (store.byTag[tag] ?? 0) + count;
   }
   if (store.startedAt === 0) store.startedAt = record.finishedAt;
   store.updatedAt = record.finishedAt;

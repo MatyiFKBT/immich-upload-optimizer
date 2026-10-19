@@ -1,9 +1,9 @@
 {
   "project": "Immich Web Media Optimizer",
-  "overall_progress_percent": 96,
-  "completed_steps": 27,
-  "total_steps": 28,
-  "updated_at": "2026-10-16",
+  "overall_progress_percent": 97,
+  "completed_steps": 28,
+  "total_steps": 29,
+  "updated_at": "2026-10-19",
   "steps": [
     {
       "id": "plan-and-tracker",
@@ -87,7 +87,7 @@
       "title": "Non-blocking FIFO job queue for library actions",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "Server-side in-memory queue runs compress/trash/archive jobs one at a time, waits for the single optimizer slot instead of failing, isolates each failure, caps history at 200 jobs, and lets a still-queued job be cancelled. The UI polls the queue, disables assets with a pending job, and no longer blocks on a job."
+      "notes": "Server-side in-memory queue runs compress/trash/archive/focused-review jobs one at a time, waits for the single optimizer slot instead of failing, isolates each failure, caps history at 200 jobs, and lets a still-queued job be cancelled. Focused-review jobs apply configured tags without archiving and report per-asset outcomes. The UI polls the queue, disables assets with a pending job, and no longer blocks on a job."
     },
     {
       "id": "optimized-tag",
@@ -164,7 +164,7 @@
       "title": "Keep tab, monthly review, and search filters in the URL with nuqs",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "nuqs 2.10.2 with its plain-React adapter (NuqsAdapter in main.tsx; no router is needed, the adapter drives the History API directly). ?tab= names the open tab, the monthly review owns year/month/includeArchived, and the compress form owns from/to/albumId. Tab, year, and month push history so the Back button walks tabs, years, and months; the archived switch and the form fields replace the current entry so typing and toggling do not pile up history steps. Defaults (compress, the current year, month unset, archived off) are dropped from the URL."
+      "notes": "nuqs 2.10.2 with its plain-React adapter (NuqsAdapter in main.tsx; no router is needed, the adapter drives the History API directly). ?tab= names the open tab, the monthly review owns year/month/includeArchived/focus, and the compress form owns from/to/albumId. Tab, year, and month push history so the Back button walks tabs, years, and months; the archived/focused switches and the form fields replace the current entry so typing and toggling do not pile up history steps. Defaults (compress, the current year, month unset, archived off, focus off) are dropped from the URL."
     },
     {
       "id": "month-grid-virtualization",
@@ -185,7 +185,7 @@
       "title": "Count activity locally in stats.json and show it in a Stats tab",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "web/src/stats.ts keeps a versioned record at WEB_DATA_DIR/stats.json (0600, written atomically and coalesced every 500ms; a damaged file is moved aside as stats.json.corrupt instead of being overwritten). Replacements are reported by the optimizer at the point where an original is really removed, so reclaimed bytes are only counted when disk was actually freed; job outcomes (trashed, archived, motion videos dropped, jobs, failures) are recorded once per job by the queue, and tag-and-archive jobs keep a per-tag count. GET /api/library/stats serves totals, per-month buckets, and per-tag counts, and a fourth tab (Stats) shows reclaimed space, replacements, trashed, archived, and dropped live-video counts plus a month-by-month table. Verified against the built server with the round-trip and corruption cases."
+      "notes": "web/src/stats.ts keeps a versioned record at WEB_DATA_DIR/stats.json (0600, written atomically and coalesced every 500ms; a damaged file is moved aside as stats.json.corrupt instead of being overwritten). Replacements are reported by the optimizer at the point where an original is really removed, so reclaimed bytes are only counted when disk was actually freed; job outcomes (trashed, archived, motion videos dropped, jobs, failures) are recorded once per job by the queue, and tag-and-archive plus focused-review tag applications keep per-tag counts. GET /api/library/stats serves totals, per-month buckets, and per-tag counts, and a fourth tab (Stats) shows reclaimed space, replacements, trashed, archived, and dropped live-video counts plus a month-by-month table. Verified against the built server with the round-trip and corruption cases."
     },
     {
       "id": "month-storage-estimates",
@@ -195,11 +195,18 @@
       "notes": "GET /api/library/months/{year}/storage returns one entry per populated month. Immich aggregates no sizes, so each month is sampled with the first page of its assets (withExif) and scaled by the month's heatmap count; a month that fits in its first page is measured exactly and paging only continues while that page held nothing from the month. Months are sampled four at a time and a year is cached for ten minutes; an unreadable month only loses its own estimate. The year grid shows the size (prefixed with ~ when it was scaled), tints each box from success through primary to destructive against the heaviest month of the year, and states that the numbers are estimates."
     },
     {
+      "id": "focused-monthly-review",
+      "title": "Add opt-in focused monthly stack review",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "The month grid can launch a URL-addressable full-screen review. Local-minute still-photo stacks and one-item video stacks are presented side-by-side on desktop and as large snap cards on phones; left/right controls stage Keep/Trash, kept photos accept configured tag-only choices, and a day overview shows review counts. Drafts and outcomes are saved per month in local storage, missing jobs are never retried automatically, and the per-stack FIFO job applies validated tags and non-forced trash with per-asset failure reporting. Scoped @tanstack/react-hotkeys bindings support keyboard review. Focused-review grouping tests, web typecheck, and production build pass; Chromium with mock library data checked desktop/mobile layout, marking, queue advancement, and day overview. No live Immich writes or Docker image build were performed."
+    },
+    {
       "id": "verification",
       "title": "User runs build, tests, and deployment verification",
       "status": "pending_user",
       "progress_percent": 10,
-      "notes": "Hono server and Vite SPA typecheck and build cleanly; the workflow passes actionlint. No runtime smoke test, no Docker image build and no live-Immich verification was performed by the assistant; that validation is the user's, including for the optimistic month actions, EXTRA_BUTTONS, click-to-open, the face row, and the unauthenticated mode."
+      "notes": "Web typecheck, focused-review unit tests, and production build pass; Chromium with mock library data checked the desktop/mobile flows. No Docker image build or live-Immich verification was performed; the user should test configured-tag and reversible-trash writes against their own instance."
     }
   ]
 }

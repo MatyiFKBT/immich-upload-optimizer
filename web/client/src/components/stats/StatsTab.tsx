@@ -156,7 +156,7 @@ export function StatsTab() {
 
           {stats && stats.byTag.length > 0 ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Archived with your buttons:</span>
+              <span className="text-sm text-muted-foreground">Tagged with your buttons:</span>
               {stats.byTag.map((entry) => (
                 <Badge key={entry.tag} variant="secondary">
                   {entry.tag} · {entry.assets}
