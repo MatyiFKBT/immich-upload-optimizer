@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HotkeysProvider, useHotkeys } from '@tanstack/react-hotkeys';
-import { ArrowRight, ArrowUpLeft, CalendarDays, Check, CircleHelp, ExternalLink, Loader2, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowRight, ArrowUpLeft, CalendarDays, Check, CircleHelp, ExternalLink, LayoutGrid, Loader2, RotateCcw, Trash2 } from 'lucide-react';
 import { thumbnailUrl } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Skeleton } from '@/components/ui/skeleton';
 import { assetLink } from '@/lib/immichLinks';
 import { formatBytes } from '@/lib/format';
-import { buildReviewStacks, formatReviewDay, loadFocusReviewDraft, saveFocusReviewDraft, type FocusReviewDraft, type ReviewChoice, type ReviewDecision, type ReviewStack } from '@/lib/focusedReview';
+import { buildReviewStacks, formatReviewDay, loadFocusReviewDraft, loadFocusReviewPrefs, saveFocusReviewDraft, saveFocusReviewPrefs, type FocusReviewDraft, type FocusReviewPrefs, type ReviewChoice, type ReviewDecision, type ReviewStack, type SinglesGridSize } from '@/lib/focusedReview';
 import { monthLabel } from '@/lib/months';
 import { cn } from '@/lib/utils';
 import type { ExtraButton, Job, LibraryAsset } from '@/types';
@@ -33,6 +33,14 @@ type StackReviewState = 'ready' | 'queued' | 'done' | 'failed' | 'unknown';
 
 /** Digits 1–9 map to the configured EXTRA_BUTTONS slots, in button order. */
 const TAG_HOTKEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
+const GRID_SIZE_OPTIONS: readonly SinglesGridSize[] = [2, 3, 4, 5];
+/** Literal classes, because the strict CSP forbids inline styles. */
+const GRID_COLUMN_CLASS: Record<SinglesGridSize, string> = {
+  2: 'grid-cols-2',
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+  5: 'grid-cols-5',
+};
 
 function isTerminal(job: Job): boolean {
   return job.status === 'done' || job.status === 'failed';
@@ -41,13 +49,15 @@ function isTerminal(job: Job): boolean {
 function FocusedReviewBody({ year, month, assets, loading, error, truncated, includeArchived, extraButtons, jobs, cancelledReviewJobs, onBack, onQueue }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<FocusReviewDraft>(() => loadFocusReviewDraft(year, month));
+  const [prefs, setPrefs] = useState<FocusReviewPrefs>(loadFocusReviewPrefs);
   const [dayOpen, setDayOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [lastTouchedId, setLastTouchedId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [atEnd, setAtEnd] = useState(false);
-  const stacks = useMemo(() => buildReviewStacks(assets), [assets]);
+  const { singlesGrid, gridSize } = prefs;
+  const stacks = useMemo(() => buildReviewStacks(assets, singlesGrid ? gridSize : 0), [assets, gridSize, singlesGrid]);
   const jobById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
 
   const assetState = useCallback((assetId: string, snapshot: FocusReviewDraft = draft): AssetReviewState => {
@@ -71,7 +81,11 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
     return 'ready';
   }, [assetState, draft]);
 
+  const isActionable = (stack: ReviewStack) => ['ready', 'failed', 'unknown'].includes(stackState(stack));
+  const isBurstStack = (stack: ReviewStack) => stack.layout === 'row' && stack.items.length > 1;
+
   useEffect(() => saveFocusReviewDraft(year, month, draft), [year, month, draft]);
+  useEffect(() => saveFocusReviewPrefs(prefs), [prefs]);
 
   // Reconcile terminal jobs against the locally saved draft. Failed/ambiguous assets keep their
   // choices for a deliberate retry; successful decisions are remembered so they are not revisited.
@@ -110,9 +124,24 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
       stacks.find((stack) => ['ready', 'failed', 'unknown'].includes(stackState(stack))) ??
       null;
 
+  /** Changing the singles layout keeps the page that holds the selected photo in front of the user. */
+  const updatePrefs = (next: FocusReviewPrefs) => {
+    const anchorId = focusedId ?? activeStack?.items[0]?.id;
+    setPrefs(next);
+    if (!anchorId) return;
+    const regrouped = buildReviewStacks(assets, next.singlesGrid ? next.gridSize : 0);
+    const anchor = regrouped.find((stack) => stack.items.some((asset) => asset.id === anchorId));
+    if (anchor) {
+      setAtEnd(false);
+      setDraft((previous) => ({ ...previous, currentStackKey: anchor.key }));
+    }
+  };
+
   useEffect(() => {
     if (!activeStack || loading || dayOpen || helpOpen) return;
-    const target = activeStack.items.find((asset) => assetState(asset.id) === 'ready' || assetState(asset.id) === 'failed') ?? activeStack.items[0];
+    const target = activeStack.items.find((asset) => asset.id === focusedId && (assetState(asset.id) === 'ready' || assetState(asset.id) === 'failed'))
+      ?? activeStack.items.find((asset) => assetState(asset.id) === 'ready' || assetState(asset.id) === 'failed')
+      ?? activeStack.items[0];
     if (!target) return;
     const card = rootRef.current?.querySelector<HTMLElement>(`[data-review-asset-id="${target.id}"]`);
     if (!card) return;
@@ -126,20 +155,23 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
   useEffect(() => {
     if (loading || stacks.length === 0 || atEnd) return;
     const selected = stacks.find((stack) => stack.key === draft.currentStackKey);
-    if (selected && ['ready', 'failed', 'unknown'].includes(stackState(selected))) return;
-    const next = stacks.find((stack) => ['ready', 'failed', 'unknown'].includes(stackState(stack)));
+    if (selected && isActionable(selected)) return;
+    const next = stacks.find(isActionable);
     if (next?.key !== draft.currentStackKey) {
       setDraft((previous) => ({ ...previous, currentStackKey: next?.key ?? null }));
     }
-  }, [atEnd, draft.currentStackKey, loading, stackState, stacks]);
+  }, [atEnd, draft.currentStackKey, loading, stacks]);
 
   const dayStacks = activeStack ? stacks.filter((stack) => stack.day === activeStack.day) : [];
   const dayIndex = activeStack ? dayStacks.findIndex((stack) => stack.key === activeStack.key) : -1;
-  const dayRemaining = dayStacks.filter((stack) => ['ready', 'failed', 'unknown'].includes(stackState(stack))).length;
+  const dayRemaining = dayStacks.filter(isActionable).length;
   const dayQueued = dayStacks.filter((stack) => stackState(stack) === 'queued').length;
-  const monthRemaining = stacks.filter((stack) => ['ready', 'failed', 'unknown'].includes(stackState(stack))).length;
+  const monthRemaining = stacks.filter(isActionable).length;
   const allQueued = stacks.length > 0 && monthRemaining === 0 && stacks.some((stack) => stackState(stack) === 'queued');
   const complete = monthRemaining === 0 && !allQueued && (stacks.length > 0 || draft.completedIds.length > 0);
+  const selectedAsset = focusedAsset();
+  const selectedChoice = selectedAsset ? draft.choices[selectedAsset.id] : undefined;
+  const selectedState = selectedAsset ? assetState(selectedAsset.id) : null;
 
   const choose = (assetId: string, disposition: ReviewChoice['disposition']) => {
     if (assetState(assetId) === 'done' || assetState(assetId) === 'queued' || assetState(assetId) === 'unknown') return;
@@ -171,7 +203,22 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
 
   const nextStackAfter = (stack: ReviewStack): ReviewStack | undefined => {
     const currentIndex = stacks.findIndex((candidate) => candidate.key === stack.key);
-    return stacks.slice(currentIndex + 1).find((candidate) => ['ready', 'failed', 'unknown'].includes(stackState(candidate)));
+    return stacks.slice(currentIndex + 1).find(isActionable);
+  };
+
+  const setCurrentStack = (key: string) => {
+    setAtEnd(false);
+    setDraft((previous) => ({ ...previous, currentStackKey: key }));
+    setDayOpen(false);
+    setFocusedId(null);
+  };
+
+  /** Alt+S skips singles and lands on the next burst stack that still needs review. */
+  const jumpToNextBurst = () => {
+    if (!activeStack) return;
+    const currentIndex = stacks.findIndex((stack) => stack.key === activeStack.key);
+    const next = stacks.slice(currentIndex + 1).find((stack) => isBurstStack(stack) && isActionable(stack));
+    if (next) setCurrentStack(next.key);
   };
 
   const applyAndNext = async () => {
@@ -219,9 +266,18 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
     setLastTouchedId(null);
   };
 
-  const focusedAsset = () =>
-    activeStack?.items.find((asset) => asset.id === focusedId) ??
-    activeStack?.items.find((asset) => assetState(asset.id) === 'ready' || assetState(asset.id) === 'failed');
+  const reviewUnknownAgain = (assetId: string) => {
+    setDraft((previous) => ({
+      ...previous,
+      jobsByAsset: omit(previous.jobsByAsset, assetId),
+      failedIds: [...new Set([...previous.failedIds, assetId])],
+    }));
+  };
+
+  function focusedAsset() {
+    return activeStack?.items.find((asset) => asset.id === focusedId) ??
+      activeStack?.items.find((asset) => assetState(asset.id) === 'ready' || assetState(asset.id) === 'failed');
+  }
 
   const focusAsset = (asset: LibraryAsset) => {
     setFocusedId(asset.id);
@@ -259,6 +315,34 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
     focusAsset(target);
   };
 
+  /** Tag chips are shared by the row card and the selected-cell bar under a singles grid. */
+  const renderTagButtons = (asset: LibraryAsset, choice: ReviewChoice, locked: boolean) => (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="mr-1 text-xs text-muted-foreground">Tags:</span>
+      {extraButtons.length === 0 ? <span className="text-xs text-muted-foreground">No configured tags</span> : null}
+      {extraButtons.map((button, index) => (
+        <button
+          key={button.label}
+          type="button"
+          disabled={locked}
+          aria-pressed={choice.tags.includes(button.label)}
+          onClick={() => {
+            toggleTag(asset.id, button.label);
+            focusAsset(asset);
+          }}
+          className={cn(
+            'min-h-8 rounded-full border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-primary',
+            choice.tags.includes(button.label) ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background hover:bg-accent',
+            locked && 'opacity-60',
+          )}
+        >
+          {index < 9 ? <span className="mr-1 tabular-nums opacity-60">{index + 1}</span> : null}
+          {button.label}
+        </button>
+      ))}
+    </div>
+  );
+
   const shortcutAllowed = (event: KeyboardEvent) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return false;
@@ -284,18 +368,13 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
       { hotkey: 'Z', callback: (event) => { if (shortcutAllowed(event)) undoLast(); } },
       { hotkey: 'Enter', callback: (event) => { if (shortcutAllowed(event)) void applyAndNext(); } },
       { hotkey: 'S', callback: (event) => { if (shortcutAllowed(event)) skipStack(); } },
+      // Physical KeyS so macOS Option+S (which types “ß”) still jumps.
+      { hotkey: 'Alt+[KeyS]', callback: (event) => { if (shortcutAllowed(event)) jumpToNextBurst(); } },
       { hotkey: 'O', callback: (event) => { if (shortcutAllowed(event)) setDayOpen(true); } },
-      { hotkey: 'Escape', callback: onBack },
+      { hotkey: 'Escape', callback: (event) => { if (shortcutAllowed(event)) onBack(); } },
     ],
     { target: document, enabled: !dayOpen && !helpOpen && !loading, ignoreInputs: true, preventDefault: true, stopPropagation: true },
   );
-
-  const setCurrentStack = (key: string) => {
-    setAtEnd(false);
-    setDraft((previous) => ({ ...previous, currentStackKey: key }));
-    setDayOpen(false);
-    setFocusedId(null);
-  };
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onBack(); }}>
@@ -319,14 +398,41 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
               </h2>
               {activeStack ? (
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  Stack {dayIndex + 1} of {dayStacks.length} · {dayRemaining} left today{dayQueued > 0 ? ` · ${dayQueued} queued` : ''}
+                  {activeStack.layout === 'grid' ? 'Grid' : 'Stack'} {dayIndex + 1} of {dayStacks.length} · {dayRemaining} left today{dayQueued > 0 ? ` · ${dayQueued} queued` : ''}
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">{loading ? 'Loading the month…' : `${monthRemaining} stack(s) left to review`}</p>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant={singlesGrid ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-10 sm:h-9"
+              aria-pressed={singlesGrid}
+              title="Group single photos between burst stacks into a grid"
+              onClick={() => updatePrefs({ ...prefs, singlesGrid: !singlesGrid })}
+            >
+              <LayoutGrid />
+              <span className="hidden md:inline">Singles grid</span>
+              <span className="md:hidden">{singlesGrid ? 'Grid on' : 'Grid off'}</span>
+            </Button>
+            {singlesGrid ? (
+              <select
+                aria-label="Singles grid size"
+                value={gridSize}
+                onChange={(event) => {
+                  const nextSize = Number(event.target.value);
+                  if (GRID_SIZE_OPTIONS.includes(nextSize as SinglesGridSize)) updatePrefs({ ...prefs, gridSize: nextSize as SinglesGridSize });
+                }}
+                className="h-10 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9"
+              >
+                {GRID_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>{size}×{size}</option>
+                ))}
+              </select>
+            ) : null}
             {activeStack ? (
               <Button variant="outline" size="sm" className="h-10 sm:h-9" onClick={() => setDayOpen(true)}>
                 <CalendarDays />
@@ -357,7 +463,47 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
             </div>
           ) : activeStack ? (
             <>
-              <div className="focus-review-scroller flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory items-stretch gap-3 overflow-x-auto px-3 py-3 sm:justify-center sm:px-6">
+              {activeStack.layout === 'grid' ? (
+                <>
+                  <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-3 sm:p-6">
+                    <div
+                      className={cn('grid w-full max-w-[min(72rem,calc(100dvh-220px))] gap-2', GRID_COLUMN_CLASS[activeStack.columns ?? gridSize])}
+                    >
+                      {activeStack.items.map((asset) => (
+                        <GridTile
+                          key={asset.id}
+                          asset={asset}
+                          state={assetState(asset.id)}
+                          choice={draft.choices[asset.id]}
+                          focused={focusedId === asset.id}
+                          onChoose={choose}
+                          onFocus={() => setFocusedId(asset.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  {selectedAsset && selectedState ? (
+                    <div className="shrink-0 border-t bg-background/95 px-3 py-2 sm:px-6">
+                      <div className="mx-auto flex min-h-9 max-w-6xl flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+                        <span className="max-w-[45vw] truncate font-medium" title={selectedAsset.originalFileName}>{selectedAsset.originalFileName}</span>
+                        <span className="text-muted-foreground tabular-nums">{selectedAsset.localDateTime.slice(11, 16)}</span>
+                        {selectedState === 'done' ? <Badge className="bg-success text-success-foreground"><Check className="size-3" /> Reviewed</Badge> : null}
+                        {selectedState === 'queued' ? <Badge variant="secondary"><Loader2 className="size-3 animate-spin" /> Queued in Immich</Badge> : null}
+                        {selectedState === 'unknown' ? (
+                          <Button variant="secondary" size="sm" className="h-8" onClick={() => reviewUnknownAgain(selectedAsset.id)}>I checked — review again</Button>
+                        ) : null}
+                        {selectedState === 'failed' ? <span className="text-destructive">Previous attempt did not settle this photo.</span> : null}
+                        {selectedChoice?.disposition === 'keep' ? renderTagButtons(selectedAsset, selectedChoice, selectedState === 'done' || selectedState === 'queued' || selectedState === 'unknown') : null}
+                        {selectedChoice?.disposition === 'trash' ? <span className="text-destructive">Will move to Immich trash when applied</span> : null}
+                        {!selectedChoice && !['done', 'queued', 'unknown'].includes(selectedState) ? (
+                          <span className="text-muted-foreground">Space keeps · D trashes{extraButtons.length > 0 ? ' · 1–9 tags' : ''}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="focus-review-scroller flex min-h-0 min-w-0 flex-1 snap-x snap-mandatory items-stretch gap-3 overflow-x-auto px-3 py-3 sm:justify-center sm:px-6">
                 {activeStack.items.map((asset) => {
                   const state = assetState(asset.id);
                   const choice = draft.choices[asset.id];
@@ -451,7 +597,7 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                           <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => setDraft((previous) => ({ ...previous, jobsByAsset: omit(previous.jobsByAsset, asset.id), failedIds: [...new Set([...previous.failedIds, asset.id])] }))}
+                            onClick={() => reviewUnknownAgain(asset.id)}
                           >
                             I checked — review again
                           </Button>
@@ -459,33 +605,7 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                       </div>
 
                       <div className="min-h-10 px-1">
-                        {choice?.disposition === 'keep' ? (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="mr-1 text-xs text-muted-foreground">Tags:</span>
-                            {extraButtons.length === 0 ? <span className="text-xs text-muted-foreground">No configured tags</span> : null}
-                            {extraButtons.map((button, index) => (
-                              <button
-                                key={button.label}
-                                type="button"
-                                disabled={locked}
-                                aria-pressed={choice.tags.includes(button.label)}
-                                onClick={(event) => {
-                                  const card = event.currentTarget.closest('article');
-                                  toggleTag(asset.id, button.label);
-                                  requestAnimationFrame(() => card?.focus({ preventScroll: true }));
-                                }}
-                                className={cn(
-                                  'min-h-8 rounded-full border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-primary',
-                                  choice.tags.includes(button.label) ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background hover:bg-accent',
-                                  locked && 'opacity-60',
-                                )}
-                              >
-                                {index < 9 ? <span className="mr-1 tabular-nums opacity-60">{index + 1}</span> : null}
-                                {button.label}
-                              </button>
-                            ))}
-                          </div>
-                        ) : choice?.disposition === 'trash' ? (
+                        {choice?.disposition === 'keep' ? renderTagButtons(asset, choice, locked) : choice?.disposition === 'trash' ? (
                           <p className="flex items-center gap-1 text-xs text-destructive"><Trash2 className="size-3" /> Will move to Immich trash when applied</p>
                         ) : (
                           <p className="text-xs text-muted-foreground">Choose Keep or Trash · nothing changes until you apply this stack</p>
@@ -495,7 +615,8 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                     </article>
                   );
                 })}
-              </div>
+                </div>
+              )}
               <div className="shrink-0 border-t bg-background/95 px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur sm:px-6 sm:pb-4">
                 <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -504,15 +625,17 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                     <span>{activeStack.items.filter((asset) => draft.choices[asset.id]?.disposition === 'trash').length} to trash</span>
                     <span className="hidden sm:inline">· Nothing is applied until you continue</span>
                   </div>
-                  <div className="flex w-full items-center gap-2 sm:w-auto">
-                    <Button variant="outline" className="h-11 flex-1 sm:flex-none" disabled={!lastTouchedId || submitting} onClick={undoLast}>
-                      <RotateCcw /> Undo
-                    </Button>
-                    <Button variant="ghost" className="h-11 flex-1 sm:flex-none" disabled={submitting} onClick={skipStack}>
-                      Skip for now <ArrowRight />
-                    </Button>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                    <div className="flex w-full gap-2 sm:w-auto">
+                      <Button variant="outline" className="h-11 flex-1 sm:flex-none" disabled={!lastTouchedId || submitting} onClick={undoLast}>
+                        <RotateCcw /> Undo
+                      </Button>
+                      <Button variant="ghost" className="h-11 flex-1 sm:flex-none" disabled={submitting} onClick={skipStack}>
+                        Skip for now <ArrowRight />
+                      </Button>
+                    </div>
                     <Button
-                      className="h-11 flex-1 sm:min-w-52 sm:flex-none"
+                      className="h-11 w-full sm:w-auto sm:min-w-52"
                       variant={activeStack.items.some((asset) => draft.choices[asset.id]?.disposition === 'trash') ? 'destructive' : 'default'}
                       disabled={!canApply}
                       onClick={() => void applyAndNext()}
@@ -545,7 +668,7 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                   <h3 className="text-xl font-semibold">Review paused</h3>
                   <p className="max-w-md text-sm text-muted-foreground">{monthRemaining} stack(s) are still untouched or need a retry. Your staged decisions are saved on this device.</p>
                   <div className="flex flex-wrap justify-center gap-2">
-                    <Button onClick={() => { setAtEnd(false); const next = stacks.find((stack) => ['ready', 'failed', 'unknown'].includes(stackState(stack))); if (next) setDraft((previous) => ({ ...previous, currentStackKey: next.key })); }}>Review remaining</Button>
+                    <Button onClick={() => { setAtEnd(false); const next = stacks.find(isActionable); if (next) setDraft((previous) => ({ ...previous, currentStackKey: next.key })); }}>Review remaining</Button>
                     <Button variant="outline" onClick={onBack}>Back to month grid</Button>
                   </div>
                 </>
@@ -589,7 +712,11 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                         {stack.items.length > 1 ? stack.items.length : <img src={thumbnailUrl(stack.items[0]!.id)} alt="" className="size-full object-cover" />}
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-sm font-medium">{stack.minute.slice(11, 16)} · {stack.items.length} {stack.items.length === 1 && stack.items[0]?.isVideo ? 'video' : stack.items.length === 1 ? 'photo' : 'photos'}</span>
+                        <span className="block text-sm font-medium">
+                          {stack.layout === 'grid'
+                            ? `Grid · ${stack.items.length} photos`
+                            : `${stack.minute.slice(11, 16)} · ${stack.items.length} ${stack.items.length === 1 && stack.items[0]?.isVideo ? 'video' : stack.items.length === 1 ? 'photo' : 'photos'}`}
+                        </span>
                         <span className="block truncate text-xs text-muted-foreground">{stack.items[0]?.originalFileName ?? 'Media stack'}</span>
                       </span>
                     </span>
@@ -617,6 +744,7 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
               <Shortcut keys="Z">Undo the last mark</Shortcut>
               <Shortcut keys="Enter">Apply this stack and continue</Shortcut>
               <Shortcut keys="S">Skip this stack for now</Shortcut>
+              <Shortcut keys="Alt+S">Jump to the next burst stack, skipping singles</Shortcut>
               <Shortcut keys="O">Open this day’s stack overview</Shortcut>
               <Shortcut keys="Esc">Return to the month grid</Shortcut>
             </div>
@@ -630,6 +758,108 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
 
 function Shortcut({ keys, children }: { keys: string; children: string }) {
   return <div className="flex items-center justify-between gap-4 border-b py-2 last:border-0"><kbd className="rounded bg-muted px-2 py-1 text-xs font-medium">{keys}</kbd><span className="text-right text-muted-foreground">{children}</span></div>;
+}
+
+interface GridTileProps {
+  asset: LibraryAsset;
+  state: AssetReviewState;
+  choice: ReviewChoice | undefined;
+  focused: boolean;
+  onChoose: (assetId: string, disposition: ReviewChoice['disposition']) => void;
+  onFocus: () => void;
+}
+
+/** A compact cell for a page of single photos; the selected cell's details sit under the grid. */
+function GridTile({ asset, state, choice, focused, onChoose, onFocus }: GridTileProps) {
+  const locked = state === 'done' || state === 'queued' || state === 'unknown';
+  return (
+    <article
+      data-review-asset-id={asset.id}
+      tabIndex={-1}
+      onFocusCapture={onFocus}
+      className={cn(
+        'relative aspect-square min-w-0 overflow-hidden rounded-xl border bg-black outline-none',
+        choice?.disposition === 'keep' && 'border-success ring-2 ring-success/40',
+        choice?.disposition === 'trash' && 'border-destructive ring-2 ring-destructive/40',
+        state === 'done' && 'border-success/60',
+        focused && 'z-10 ring-2 ring-primary ring-offset-2 ring-offset-background',
+      )}
+    >
+      <img
+        src={thumbnailUrl(asset.id, 'preview')}
+        alt={asset.originalFileName}
+        loading="lazy"
+        decoding="async"
+        className="absolute inset-0 size-full object-cover"
+      />
+      <span className="pointer-events-none absolute left-1.5 top-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white">
+        {asset.localDateTime.slice(11, 16)}
+      </span>
+      {choice ? (
+        <span
+          className={cn(
+            'pointer-events-none absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full text-white shadow-sm',
+            choice.disposition === 'keep' ? 'bg-success' : 'bg-destructive',
+          )}
+          title={choice.disposition === 'keep' ? 'Keep' : 'Move to Immich trash'}
+        >
+          {choice.disposition === 'keep' ? <Check className="size-3.5" /> : <Trash2 className="size-3.5" />}
+        </span>
+      ) : null}
+      {!locked ? (
+        <>
+          <button
+            type="button"
+            aria-label={`Keep ${asset.originalFileName}`}
+            aria-pressed={choice?.disposition === 'keep'}
+            className="absolute inset-y-0 left-0 flex w-1/2 items-end justify-start p-1.5 outline-none transition-colors hover:bg-success/20 focus-visible:bg-success/25"
+            onClick={(event) => {
+              const tile = event.currentTarget.closest('article');
+              onChoose(asset.id, 'keep');
+              requestAnimationFrame(() => tile?.focus());
+            }}
+          >
+            <span className="grid size-7 place-items-center rounded-full bg-black/65 text-white shadow-sm"><Check className="size-3.5" /></span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Mark ${asset.originalFileName} for Immich trash`}
+            aria-pressed={choice?.disposition === 'trash'}
+            className="absolute inset-y-0 right-0 flex w-1/2 items-end justify-end p-1.5 outline-none transition-colors hover:bg-destructive/25 focus-visible:bg-destructive/30"
+            onClick={(event) => {
+              const tile = event.currentTarget.closest('article');
+              onChoose(asset.id, 'trash');
+              requestAnimationFrame(() => tile?.focus());
+            }}
+          >
+            <span className="grid size-7 place-items-center rounded-full bg-black/65 text-white shadow-sm"><Trash2 className="size-3.5" /></span>
+          </button>
+        </>
+      ) : null}
+      {state === 'done' ? (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-success/30 p-1 text-center text-[11px] font-semibold text-white">
+          <span className="rounded bg-success/85 px-1.5 py-1">Reviewed</span>
+        </div>
+      ) : null}
+      {state === 'queued' ? (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/50 p-1 text-center text-[11px] font-semibold text-white">
+          <span className="inline-flex items-center gap-1 rounded bg-black/60 px-1.5 py-1"><Loader2 className="size-3 animate-spin" /> Queued</span>
+        </div>
+      ) : null}
+      {state === 'unknown' ? (
+        <button
+          type="button"
+          onClick={onFocus}
+          className="absolute inset-0 grid place-items-center bg-black/60 p-1 text-center text-[11px] font-semibold text-white"
+        >
+          <span className="rounded bg-destructive/85 px-1.5 py-1">Check status</span>
+        </button>
+      ) : null}
+      {state === 'failed' ? (
+        <span className="pointer-events-none absolute bottom-1.5 left-1/2 -translate-x-1/2 rounded bg-destructive/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">Retry</span>
+      ) : null}
+    </article>
+  );
 }
 
 function omit<T>(record: Record<string, T>, key: string): Record<string, T> {
