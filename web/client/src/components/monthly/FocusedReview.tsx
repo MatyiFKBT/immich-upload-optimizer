@@ -31,6 +31,9 @@ interface Props {
 type AssetReviewState = 'ready' | 'queued' | 'done' | 'failed' | 'unknown';
 type StackReviewState = 'ready' | 'queued' | 'done' | 'failed' | 'unknown';
 
+/** Digits 1–9 map to the configured EXTRA_BUTTONS slots, in button order. */
+const TAG_HOTKEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
+
 function isTerminal(job: Job): boolean {
   return job.status === 'done' || job.status === 'failed';
 }
@@ -216,10 +219,44 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
     setLastTouchedId(null);
   };
 
-  const markFocused = (disposition: ReviewChoice['disposition']) => {
+  const focusedAsset = () =>
+    activeStack?.items.find((asset) => asset.id === focusedId) ??
+    activeStack?.items.find((asset) => assetState(asset.id) === 'ready' || assetState(asset.id) === 'failed');
+
+  const focusAsset = (asset: LibraryAsset) => {
+    setFocusedId(asset.id);
+    const card = rootRef.current?.querySelector<HTMLElement>(`[data-review-asset-id="${asset.id}"]`);
+    if (!card) return;
+    card.focus({ preventScroll: true });
+    card.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  };
+
+  /** Vim j/k: move the selection inside the current stack, stopping at its ends. */
+  const moveFocus = (delta: 1 | -1) => {
     if (!activeStack) return;
-    const target = activeStack.items.find((asset) => asset.id === focusedId) ?? activeStack.items.find((asset) => assetState(asset.id) === 'ready' || assetState(asset.id) === 'failed');
+    const items = activeStack.items;
+    const currentIndex = items.findIndex((asset) => asset.id === focusedId);
+    const startIndex = currentIndex >= 0 ? currentIndex : delta > 0 ? -1 : items.length;
+    const nextIndex = Math.max(0, Math.min(items.length - 1, startIndex + delta));
+    const next = items[nextIndex];
+    if (next) focusAsset(next);
+  };
+
+  const markFocused = (disposition: ReviewChoice['disposition']) => {
+    const target = focusedAsset();
     if (target) choose(target.id, disposition);
+  };
+
+  /** Digits keep the focused photo and toggle the tag of the matching EXTRA_BUTTONS slot. */
+  const toggleTagAt = (index: number) => {
+    const button = extraButtons[index];
+    const target = focusedAsset();
+    if (!button || !target) return;
+    const state = assetState(target.id);
+    if (state === 'done' || state === 'queued' || state === 'unknown') return;
+    if (draft.choices[target.id]?.disposition !== 'keep') choose(target.id, 'keep');
+    toggleTag(target.id, button.label);
+    focusAsset(target);
   };
 
   const shortcutAllowed = (event: KeyboardEvent) => {
@@ -234,10 +271,16 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
 
   useHotkeys(
     [
-      { hotkey: 'ArrowLeft', callback: (event) => { if (shortcutAllowed(event)) markFocused('keep'); } },
-      { hotkey: 'K', callback: (event) => { if (shortcutAllowed(event)) markFocused('keep'); } },
-      { hotkey: 'ArrowRight', callback: (event) => { if (shortcutAllowed(event)) markFocused('trash'); } },
-      { hotkey: 'X', callback: (event) => { if (shortcutAllowed(event)) markFocused('trash'); } },
+      { hotkey: 'J', callback: (event) => { if (shortcutAllowed(event)) moveFocus(1); } },
+      { hotkey: 'K', callback: (event) => { if (shortcutAllowed(event)) moveFocus(-1); } },
+      ...TAG_HOTKEYS.slice(0, Math.min(TAG_HOTKEYS.length, extraButtons.length)).map((hotkey, index) => ({
+        hotkey,
+        callback: (event: KeyboardEvent) => { if (shortcutAllowed(event)) toggleTagAt(index); },
+      })),
+      { hotkey: 'Space', callback: (event) => { if (shortcutAllowed(event)) markFocused('keep'); } },
+      { hotkey: 'Backspace', callback: (event) => { if (shortcutAllowed(event)) markFocused('trash'); } },
+      { hotkey: 'Delete', callback: (event) => { if (shortcutAllowed(event)) markFocused('trash'); } },
+      { hotkey: 'D', callback: (event) => { if (shortcutAllowed(event)) markFocused('trash'); } },
       { hotkey: 'Z', callback: (event) => { if (shortcutAllowed(event)) undoLast(); } },
       { hotkey: 'Enter', callback: (event) => { if (shortcutAllowed(event)) void applyAndNext(); } },
       { hotkey: 'S', callback: (event) => { if (shortcutAllowed(event)) skipStack(); } },
@@ -420,19 +463,24 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="mr-1 text-xs text-muted-foreground">Tags:</span>
                             {extraButtons.length === 0 ? <span className="text-xs text-muted-foreground">No configured tags</span> : null}
-                            {extraButtons.map((button) => (
+                            {extraButtons.map((button, index) => (
                               <button
                                 key={button.label}
                                 type="button"
                                 disabled={locked}
                                 aria-pressed={choice.tags.includes(button.label)}
-                                onClick={() => toggleTag(asset.id, button.label)}
+                                onClick={(event) => {
+                                  const card = event.currentTarget.closest('article');
+                                  toggleTag(asset.id, button.label);
+                                  requestAnimationFrame(() => card?.focus({ preventScroll: true }));
+                                }}
                                 className={cn(
                                   'min-h-8 rounded-full border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-primary',
                                   choice.tags.includes(button.label) ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background hover:bg-accent',
                                   locked && 'opacity-60',
                                 )}
                               >
+                                {index < 9 ? <span className="mr-1 tabular-nums opacity-60">{index + 1}</span> : null}
                                 {button.label}
                               </button>
                             ))}
@@ -561,8 +609,10 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
               <DialogDescription>Shortcuts work when the review itself has focus, not while a tag or dialog control is active.</DialogDescription>
             </DialogHeader>
             <div className="space-y-2 text-sm">
-              <Shortcut keys="← / K">Keep focused photo</Shortcut>
-              <Shortcut keys="→ / X">Move focused photo to Immich trash</Shortcut>
+              <Shortcut keys="J / K">Move between photos in this stack</Shortcut>
+              <Shortcut keys="1…9">Keep the focused photo and toggle that tag</Shortcut>
+              <Shortcut keys="Space">Mark the focused photo to keep</Shortcut>
+              <Shortcut keys="D / Del / ⌫">Mark the focused photo for Immich trash</Shortcut>
               <Shortcut keys="Tab">Move focus between photos and controls</Shortcut>
               <Shortcut keys="Z">Undo the last mark</Shortcut>
               <Shortcut keys="Enter">Apply this stack and continue</Shortcut>
