@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import { CircleSlash, Film, Loader2, RefreshCw } from 'lucide-react';
 import { api, thumbnailUrl, type Job, type MotionPhoto } from '@/api';
 import { ActionConfirm, type PendingAction } from '@/components/monthly/ActionConfirm';
@@ -13,6 +14,7 @@ import { useJobs } from '@/hooks/useJobs';
 import { useJobToasts } from '@/hooks/useJobToasts';
 import { clearConfirmations, CONFIRM_KINDS, isConfirmationHidden, setConfirmationHidden } from '@/lib/confirmPrefs';
 import { formatBytes } from '@/lib/format';
+import { hasOpenDialog, isTypingTarget } from '@/lib/hotkeys';
 import { cn } from '@/lib/utils';
 
 const MOTION = 'motion' as const;
@@ -53,22 +55,6 @@ export function MotionTab() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        anchorRef.current = null;
-        setSelected(new Set());
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
-        event.preventDefault();
-        setSelected(new Set(items.map((item) => item.id)));
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [items]);
 
   const handleSettled = useCallback(
     (job: Job) => {
@@ -254,6 +240,45 @@ export function MotionTab() {
     });
   };
 
+  useHotkeys(
+    [
+      {
+        hotkey: 'Mod+A',
+        callback: (event) => {
+          if (isTypingTarget(event) || hasOpenDialog() || items.length === 0) return;
+          anchorRef.current = items[0]?.id ?? null;
+          setSelected(new Set(items.map((item) => item.id)));
+        },
+      },
+      {
+        hotkey: 'Escape',
+        callback: (event) => {
+          if (isTypingTarget(event) || hasOpenDialog()) return;
+          anchorRef.current = null;
+          setSelected(new Set());
+        },
+      },
+      {
+        hotkey: 'U',
+        callback: (event) => {
+          if (isTypingTarget(event) || hasOpenDialog()) return;
+          if (![...selected].some((id) => !pendingAssetIds.has(id))) return;
+          requestAction();
+        },
+        options: { ignoreInputs: false },
+      },
+      {
+        hotkey: 'R',
+        callback: (event) => {
+          if (isTypingTarget(event) || hasOpenDialog() || loading) return;
+          void load();
+        },
+        options: { ignoreInputs: false },
+      },
+    ],
+    { target: document, enabled: !pending, ignoreInputs: true, preventDefault: true, stopPropagation: true },
+  );
+
   const confirmPending = (remember: boolean) => {
     const action = pending;
     if (!action) return;
@@ -322,7 +347,7 @@ export function MotionTab() {
           </p>
           <p className="text-xs text-muted-foreground">
             <span className="hidden md:inline">
-              Click a photo to select it · Shift+click for a range · drag a box to grab several · Cmd/Ctrl+A selects all · Esc clears
+              Click a photo to select it · Shift+click for a range · drag a box to grab several · Cmd/Ctrl+A selects all · U unlinks · R refreshes · Esc clears
             </span>
             <span className="md:hidden">Tap a photo to select it, or use “Select loaded live photos”. Tap Clear to deselect everything.</span>
           </p>

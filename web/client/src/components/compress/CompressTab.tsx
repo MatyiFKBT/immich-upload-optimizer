@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import { api, type AssetItem, type Batch, type SearchFilters } from '@/api';
 import { BATCH_ID_KEY, rememberBatchId } from '@/lib/storage';
+import { hasOpenDialog, isTypingTarget } from '@/lib/hotkeys';
 import type { Album, ProfileOption } from '@/types';
 import { BatchPanel } from './BatchPanel';
 import { ProfilesPanel } from './ProfilesPanel';
@@ -217,6 +219,21 @@ export function CompressTab({ albums, profiles }: Props) {
       return next;
     });
   };
+
+  useHotkeys(
+    [
+      { hotkey: 'Mod+A', callback: (event) => { if (!isTypingTarget(event) && !hasOpenDialog() && results.length > 0) toggleAllLoaded(true); } },
+      { hotkey: 'Escape', callback: (event) => { if (!isTypingTarget(event) && !hasOpenDialog()) setSelected(new Set()); } },
+      {
+        hotkey: 'Mod+Enter',
+        callback: (event) => {
+          if (isTypingTarget(event) || hasOpenDialog() || starting) return;
+          if (selected.size > 0 && selectedProfiles.size > 0) void startBatch();
+        },
+      },
+    ],
+    { target: document, ignoreInputs: true, preventDefault: true, stopPropagation: true },
+  );
 
   return (
     <div className="space-y-5">

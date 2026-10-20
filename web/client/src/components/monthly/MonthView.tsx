@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import { ArrowLeft, Loader2, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useGridBox } from '@/hooks/useGridBox';
 import { buildTimeline, type Mark } from '@/lib/bursts';
 import { formatBytes } from '@/lib/format';
+import { hasOpenDialog, isTypingTarget } from '@/lib/hotkeys';
 import { columnsForWidth, GRID_GAP, gridRows } from '@/lib/monthGrid';
 import { monthLabel } from '@/lib/months';
 import type { ActionKind, ExtraButton, LibraryAsset, ProfileOption } from '@/types';
@@ -102,6 +104,13 @@ export function MonthView({
     getItemKey: useCallback((index: number) => rows[index]?.key ?? index, [rows]),
   });
 
+  useHotkeys(
+    [
+      { hotkey: 'F', callback: (event) => { if (!isTypingTarget(event) && !hasOpenDialog()) onStartFocused(); }, options: { ignoreInputs: false } },
+    ],
+    { target: document, enabled: !loading, ignoreInputs: true, preventDefault: true, stopPropagation: true },
+  );
+
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
@@ -124,7 +133,7 @@ export function MonthView({
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {busy ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
-            <Button variant="default" size="sm" className="h-10 sm:h-9" onClick={onStartFocused}>
+            <Button variant="default" size="sm" className="h-10 sm:h-9" title="Focused review (F)" onClick={onStartFocused}>
               <Maximize2 />
               Focused review
             </Button>
@@ -154,6 +163,7 @@ export function MonthView({
           image to open it in Immich. Actions are queued and run one after another, so you can keep working. Only the rows you are looking at
           are rendered, so a month of thousands of assets stays responsive.
         </p>
+        <p className="text-xs text-muted-foreground">Press <kbd className="rounded bg-muted px-1">F</kbd> for Focused review.</p>
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

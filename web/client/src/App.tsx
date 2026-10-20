@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { BarChart3, CalendarDays, Film, Minimize2 } from 'lucide-react';
-import { parseAsStringEnum, useQueryState } from 'nuqs';
+import { BarChart3, CalendarDays, Film, Keyboard, Minimize2 } from 'lucide-react';
+import { parseAsBoolean, parseAsStringEnum, useQueryState } from 'nuqs';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import { api } from '@/api';
+import { ShortcutHelpDialog } from '@/components/ShortcutHelpDialog';
+import { Button } from '@/components/ui/button';
 import { CompressTab } from '@/components/compress/CompressTab';
 import { MonthlyTab } from '@/components/monthly/MonthlyTab';
 import { MotionTab } from '@/components/motion/MotionTab';
@@ -15,9 +18,12 @@ import type { Album, ExtraButton, ProfileOption } from '@/types';
 type TabValue = 'compress' | 'monthly' | 'motion' | 'stats';
 const TAB_VALUES: TabValue[] = ['compress', 'monthly', 'motion', 'stats'];
 const tabParser = parseAsStringEnum<TabValue>(TAB_VALUES).withDefault('compress').withOptions({ history: 'push' });
+const focusParser = parseAsBoolean.withDefault(false);
 
 export function App() {
   const [tab, setTab] = useQueryState('tab', tabParser);
+  const [focusReview] = useQueryState('focus', focusParser);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [extraButtons, setExtraButtons] = useState<ExtraButton[]>([]);
@@ -45,6 +51,17 @@ export function App() {
     };
   }, []);
 
+  useHotkeys(
+    [
+      { hotkey: 'Alt+[Digit1]', callback: () => void setTab('compress') },
+      { hotkey: 'Alt+[Digit2]', callback: () => void setTab('monthly') },
+      { hotkey: 'Alt+[Digit3]', callback: () => void setTab('motion') },
+      { hotkey: 'Alt+[Digit4]', callback: () => void setTab('stats') },
+      { hotkey: '?', callback: () => setHelpOpen(true), options: { ignoreInputs: false } },
+    ],
+    { target: document, enabled: !(focusReview && tab === 'monthly') && !helpOpen, ignoreInputs: true, preventDefault: true, stopPropagation: true },
+  );
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -54,6 +71,9 @@ export function App() {
           <p className="text-sm text-muted-foreground">Compare smaller versions, keep the library tidy month by month, and drop live-photo videos.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onClick={() => setHelpOpen(true)}>
+            <Keyboard />
+          </Button>
           <span
             className={cn(
               'rounded-full border px-3 py-1.5 text-xs font-medium',
@@ -108,6 +128,7 @@ export function App() {
         API credentials stay in the server container. Originals are only removed when you explicitly ask for it.
       </footer>
       <Toaster />
+      <ShortcutHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }
