@@ -372,6 +372,8 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
       { hotkey: 'Alt+[KeyS]', callback: (event) => { if (shortcutAllowed(event)) jumpToNextBurst(); } },
       { hotkey: 'O', callback: (event) => { if (shortcutAllowed(event)) setDayOpen(true); } },
       { hotkey: 'Escape', callback: (event) => { if (shortcutAllowed(event)) onBack(); } },
+      // '?' is global inside the review, even after a button (such as the help button) has focus.
+      { hotkey: '?', callback: () => setHelpOpen(true), options: { ignoreInputs: false } },
     ],
     { target: document, enabled: !dayOpen && !helpOpen && !loading, ignoreInputs: true, preventDefault: true, stopPropagation: true },
   );
@@ -440,7 +442,7 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                 <span className="sm:hidden">{dayRemaining} left today</span>
               </Button>
             ) : null}
-            <Button variant="ghost" size="icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onClick={() => setHelpOpen(true)}>
+            <Button variant="ghost" size="icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onClick={() => setHelpOpen(true)}>
               <CircleHelp />
             </Button>
           </div>
@@ -746,6 +748,7 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
               <Shortcut keys="S">Skip this stack for now</Shortcut>
               <Shortcut keys="Alt+S">Jump to the next burst stack, skipping singles</Shortcut>
               <Shortcut keys="O">Open this day’s stack overview</Shortcut>
+              <Shortcut keys="?">Show this keyboard help</Shortcut>
               <Shortcut keys="Esc">Return to the month grid</Shortcut>
             </div>
           </DialogContent>
