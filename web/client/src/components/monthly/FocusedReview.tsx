@@ -4,6 +4,7 @@ import { ArrowRight, ArrowUpLeft, CalendarDays, Check, CircleHelp, ExternalLink,
 import { thumbnailUrl } from '@/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FaceRow } from '@/components/monthly/FaceRow';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { assetLink } from '@/lib/immichLinks';
@@ -489,6 +490,7 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                       <div className="mx-auto flex min-h-9 max-w-6xl flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
                         <span className="max-w-[45vw] truncate font-medium" title={selectedAsset.originalFileName}>{selectedAsset.originalFileName}</span>
                         <span className="text-muted-foreground tabular-nums">{selectedAsset.localDateTime.slice(11, 16)}</span>
+                        <FaceRow asset={selectedAsset} />
                         {selectedState === 'done' ? <Badge className="bg-success text-success-foreground"><Check className="size-3" /> Reviewed</Badge> : null}
                         {selectedState === 'queued' ? <Badge variant="secondary"><Loader2 className="size-3 animate-spin" /> Queued in Immich</Badge> : null}
                         {selectedState === 'unknown' ? (
@@ -605,6 +607,8 @@ function FocusedReviewBody({ year, month, assets, loading, error, truncated, inc
                           </Button>
                         </div> : null}
                       </div>
+
+                      <FaceRow asset={asset} className="px-1" />
 
                       <div className="min-h-10 px-1">
                         {choice?.disposition === 'keep' ? renderTagButtons(asset, choice, locked) : choice?.disposition === 'trash' ? (

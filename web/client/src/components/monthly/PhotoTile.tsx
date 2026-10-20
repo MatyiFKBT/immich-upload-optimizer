@@ -2,15 +2,13 @@ import type { ReactNode } from 'react';
 import { Check, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { personThumbnailUrl, thumbnailUrl } from '@/api';
+import { FaceRow } from '@/components/monthly/FaceRow';
+import { thumbnailUrl } from '@/api';
 import { formatBytes } from '@/lib/format';
-import { assetLink, personLink } from '@/lib/immichLinks';
+import { assetLink } from '@/lib/immichLinks';
 import { cn } from '@/lib/utils';
 import type { Mark } from '@/lib/bursts';
 import type { LibraryAsset } from '@/types';
-
-/** Faces beyond this are only counted; a tile is too small for a long face row. */
-const FACE_LIMIT = 4;
 
 interface Props {
   asset: LibraryAsset;
@@ -80,27 +78,7 @@ export function PhotoTile({ asset, mark, suggested, onKeep, onTrash, footer }: P
         </p>
       </div>
 
-      {asset.people.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1 px-1">
-          {asset.people.slice(0, FACE_LIMIT).map((person) => (
-            <a
-              key={person.id}
-              href={personLink(person.id)}
-              target="_blank"
-              rel="noreferrer"
-              title={`${person.name} in Immich`}
-              className="shrink-0 rounded-full ring-1 ring-border transition hover:ring-2 hover:ring-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-            >
-              <img src={personThumbnailUrl(person.id)} alt={person.name} loading="lazy" decoding="async" className="size-7 rounded-full object-cover" />
-            </a>
-          ))}
-          {asset.people.length > FACE_LIMIT ? (
-            <span className="text-xs text-muted-foreground" title={asset.people.slice(FACE_LIMIT).map((person) => person.name).join(', ')}>
-              +{asset.people.length - FACE_LIMIT}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
+      {asset.people.length > 0 ? <FaceRow asset={asset} className="px-1" /> : null}
 
       {interactive ? (
         <div className="mt-auto flex gap-1">
