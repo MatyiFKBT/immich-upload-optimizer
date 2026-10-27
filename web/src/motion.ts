@@ -2,13 +2,12 @@ import { mkdir, mkdtemp, open, readdir, rm, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { AssetMediaStatus } from '@immich/sdk';
 import {
-  assetHasMetadata,
-  assetIsMotion,
   copyTagsAndAlbums,
   downloadOriginal,
   getAlbumIdsForAsset,
   getAssetBrief,
   getAssetSnapshot,
+  readMotionState,
   readStoredOriginalSize,
   removeOriginal,
   sha1Base64,
@@ -181,17 +180,22 @@ export async function stripMotionStill(options: { sourcePath: string; outputPath
 }
 
 /**
- * Waits until Immich has extracted the replacement's metadata, then asks whether it still counts as
- * a motion photo. A file whose metadata was never extracted reports false: the rewritten file is
- * already proven clean locally, so this only confirms that Immich agrees.
+ * Waits until Immich has extracted the replacement's metadata, then confirms that it is a still.
+ * The link and the motion flag can appear a moment after the upload returns, so checking them in the
+ * same pass as the tags would race the metadata job. A file whose metadata never arrives is accepted:
+ * the rewritten file is already proven clean locally, and this only confirms that Immich agrees.
  */
-async function motionCheckAfterMetadata(assetId: string): Promise<boolean> {
+async function settleReplacement(assetId: string): Promise<void> {
   const deadline = Date.now() + METADATA_WAIT_MS;
-  for (;;) {
-    if (await assetHasMetadata(assetId)) return assetIsMotion(assetId);
-    if (Date.now() > deadline) return false;
+  let state = await readMotionState(assetId);
+  while (!state.ready && Date.now() <= deadline) {
     await delay(METADATA_POLL_MS);
+    state = await readMotionState(assetId);
   }
+  if (state.livePhotoVideoId !== null) {
+    throw new Error(`Immich linked a motion video (${state.livePhotoVideoId}) to the replacement; original retained`);
+  }
+  if (state.isMotion) throw new Error('Immich still classifies the replacement as a motion photo; original retained');
 }
 
 /** Detaches a separate video asset (iPhone live photos) and trashes it. */
@@ -271,10 +275,9 @@ export async function removeMotionFromAsset(assetId: string): Promise<MotionOutc
       }
       const tagIds = [...new Set(current.tagIds)];
       await copyTagsAndAlbums({ newAssetId: uploaded.id, tagIds, albumIds });
-      await verifyReplacement({ assetId: uploaded.id, checksum: uploaded.checksum, tagIds, albumIds, livePhotoVideoId: null });
-      if (await motionCheckAfterMetadata(uploaded.id)) {
-        throw new Error('Immich still classifies the replacement as a motion photo; original retained');
-      }
+      // The live-photo link is judged after metadata extraction, in `settleReplacement`.
+      await verifyReplacement({ assetId: uploaded.id, checksum: uploaded.checksum, tagIds, albumIds });
+      await settleReplacement(uploaded.id);
     } catch (error) {
       // The replacement is unusable or unverified: drop it so the library does not keep an extra
       // still, and leave the original in place.

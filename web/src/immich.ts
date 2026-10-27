@@ -131,10 +131,13 @@ export async function getAlbumIdsForAsset(id: string): Promise<string[]> {
   return albums.map((album) => album.id);
 }
 
-/** Whether Immich has finished extracting an asset's metadata, so EXIF-derived fields are final. */
-export async function assetHasMetadata(id: string): Promise<boolean> {
-  const asset = await getAssetInfo({ id });
-  return asset.hasMetadata;
+export interface MotionState {
+  /** Immich has extracted the asset's metadata, so its EXIF-derived fields are final. */
+  ready: boolean;
+  /** Immich still lists the asset as a motion photo. */
+  isMotion: boolean;
+  /** The video Immich linked to the asset, or null when none is linked. */
+  livePhotoVideoId: string | null;
 }
 
 /**
@@ -148,6 +151,20 @@ export async function assetIsMotion(id: string): Promise<boolean> {
     metadataSearchDto: { filter: { id: { eq: id }, isMotion: { eq: true } }, size: 1 },
   });
   return response.assets.items.some((asset) => asset.id === id);
+}
+
+/**
+ * Everything needed to judge a fresh upload as a still. Immich extracts metadata in a background job,
+ * so the motion flag and the live-photo link can change shortly after the upload returns; callers
+ * must poll until `ready` before trusting them.
+ */
+export async function readMotionState(id: string): Promise<MotionState> {
+  const [asset, isMotion] = await Promise.all([getAssetInfo({ id }), assetIsMotion(id)]);
+  return {
+    ready: asset.hasMetadata,
+    isMotion,
+    livePhotoVideoId: asset.livePhotoVideoId ?? null,
+  };
 }
 
 
@@ -305,22 +322,32 @@ export async function verifyReplacement(options: {
   checksum: string;
   tagIds: string[];
   albumIds: string[];
-  livePhotoVideoId: string | null;
+  /**
+   * The link the replacement must report. Omitted when the caller judges motion separately, after
+   * Immich has extracted metadata: the link can appear a moment after the upload returns.
+   */
+  livePhotoVideoId?: string | null;
 }): Promise<void> {
   const [asset, albums] = await Promise.all([
     getAssetInfo({ id: options.assetId }),
     getAllAlbums({ assetId: options.assetId }),
   ]);
-  if (asset.isTrashed || asset.checksum !== options.checksum || (asset.livePhotoVideoId ?? null) !== options.livePhotoVideoId) {
-    throw new Error('Replacement asset verification failed');
+  if (asset.isTrashed) throw new Error('The replacement is in the Immich trash');
+  if (asset.checksum !== options.checksum) {
+    throw new Error(`Immich stored checksum ${asset.checksum} for the replacement but ${options.checksum} was uploaded`);
+  }
+  if (options.livePhotoVideoId !== undefined && (asset.livePhotoVideoId ?? null) !== options.livePhotoVideoId) {
+    throw new Error(`The replacement has a live photo video link (${asset.livePhotoVideoId ?? 'none'}) but ${options.livePhotoVideoId ?? 'none'} was expected`);
   }
   const actualTags = new Set((asset.tags ?? []).map((tag) => tag.id));
-  for (const id of options.tagIds) {
-    if (!actualTags.has(id)) throw new Error('Replacement is missing one or more original tags');
+  const missingTags = options.tagIds.filter((id) => !actualTags.has(id));
+  if (missingTags.length > 0) {
+    throw new Error(`The replacement is missing ${missingTags.length} of ${options.tagIds.length} original tag(s)`);
   }
   const actualAlbums = new Set(albums.map((album) => album.id));
-  for (const id of options.albumIds) {
-    if (!actualAlbums.has(id)) throw new Error('Replacement is missing one or more original albums');
+  const missingAlbums = options.albumIds.filter((id) => !actualAlbums.has(id));
+  if (missingAlbums.length > 0) {
+    throw new Error(`The replacement is missing ${missingAlbums.length} of ${options.albumIds.length} original album(s)`);
   }
 }
 

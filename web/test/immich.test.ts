@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { assetIsMotion, configureImmich } from '../src/immich.js';
+import { assetIsMotion, configureImmich, readMotionState } from '../src/immich.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -33,6 +33,28 @@ describe('assetIsMotion', () => {
       size: 1,
     });
     expect(requests[0]?.body).not.toHaveProperty('id');
+  });
+
+  it('reads the motion state and readiness of a fresh upload', async () => {
+    configureImmich('http://immich.test/api', 'test-key');
+    const responses: Record<string, unknown> = {
+      '/search/metadata': { assets: { items: [{ id: 'asset-1' }], nextCursor: null, total: 1 } },
+      '/assets/asset-1': { id: 'asset-1', hasMetadata: false, livePhotoVideoId: 'video-1' },
+    };
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const key = Object.keys(responses).find((path) => url.endsWith(path));
+      return new Response(JSON.stringify(key ? responses[key] : {}), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    await expect(readMotionState('asset-1')).resolves.toEqual({
+      ready: false,
+      isMotion: true,
+      livePhotoVideoId: 'video-1',
+    });
   });
 
   it('reports a motion photo that Immich returns', async () => {
