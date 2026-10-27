@@ -1,5 +1,6 @@
 import {
   addAssetsToAlbums,
+  AssetMediaStatus,
   AssetOrder,
   AssetTypeEnum,
   AssetVisibility,
@@ -13,6 +14,7 @@ import {
   getMyCalendarHeatmap,
   getPeopleThumbnailPath,
   init,
+  restoreAssets as restoreAssetsSdk,
   searchAssets,
   updateAsset,
   updateAssets,
@@ -278,7 +280,7 @@ export async function uploadReplacement(options: {
   isFavorite: boolean;
   visibility: AssetVisibility;
   livePhotoVideoId: string | null;
-}): Promise<{ id: string; status: string; checksum: string }> {
+}): Promise<{ id: string; status: AssetMediaStatus; checksum: string }> {
   const checksum = await sha1Base64(options.filePath);
   const filename = basename(options.filename);
   const blob = await openAsBlob(options.filePath, { type: options.mimeType });
@@ -383,6 +385,11 @@ export async function verifyReplacement(options: {
 
 export async function removeOriginal(id: string): Promise<void> {
   await deleteAssets({ assetBulkDeleteDto: { ids: [id] } });
+}
+
+/** Restores assets from the Immich trash. */
+export async function restoreTrashedAssets(ids: string[]): Promise<void> {
+  await restoreAssetsSdk({ bulkIdsDto: { ids } });
 }
 
 export interface MonthCount {

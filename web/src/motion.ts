@@ -10,6 +10,7 @@ import {
   readMotionState,
   readStoredOriginalSize,
   removeOriginal,
+  restoreTrashedAssets,
   sha1Base64,
   trashAssets,
   unlinkMotionVideo,
@@ -215,6 +216,58 @@ async function unlinkRecipe(asset: AssetSnapshot): Promise<MotionOutcome> {
   return { status: 'unlinked', videoId };
 }
 
+/** Immich may store a duplicate under a name with a `+1` suffix; the part before it still matches. */
+function sameFileName(left: string, right: string): boolean {
+  const strip = (name: string): string => name.replace(/\+\d+(?=\.[^.]+$)/, '');
+  return strip(left) === strip(right);
+}
+
+interface AdoptedReplacement {
+  id: string;
+  /** True when this flow created or restored the asset, so a failed verification may trash it again. */
+  rollback: boolean;
+}
+
+/**
+ * Decides which asset is the replacement.
+ *
+ * A duplicate upload means Immich already holds an asset with exactly these bytes. That is normally
+ * the still a previous attempt uploaded before it rolled back, which is sitting in the trash; it is
+ * restored and adopted rather than failing, so a retry does not need the trash emptied by hand. A
+ * duplicate is only adopted when it is this still's own earlier replacement (same name and capture
+ * time); anything else is refused instead of silently taking over an unrelated asset. A live
+ * duplicate is never rolled back, because it may belong to the library already.
+ */
+async function adoptReplacement(options: {
+  uploaded: { id: string; status: AssetMediaStatus; checksum: string };
+  original: AssetSnapshot;
+  current: AssetSnapshot;
+}): Promise<AdoptedReplacement> {
+  const { uploaded, original, current } = options;
+  if (uploaded.status === AssetMediaStatus.Created) {
+    if (uploaded.id === original.id) throw new Error('Immich returned the original asset for the upload; nothing was changed');
+    return { id: uploaded.id, rollback: true };
+  }
+  if (uploaded.status !== AssetMediaStatus.Duplicate) {
+    throw new Error(`Immich answered the upload with "${String(uploaded.status)}"; original retained`);
+  }
+  if (uploaded.id === original.id) throw new Error('Immich matched the original asset; nothing was changed');
+
+  const duplicate = await getAssetSnapshot(uploaded.id);
+  if (duplicate.checksum !== uploaded.checksum) {
+    throw new Error('Immich matched an asset with a different checksum; nothing was changed');
+  }
+  if (!sameFileName(duplicate.originalFileName, current.originalFileName) || duplicate.fileCreatedAt !== current.fileCreatedAt) {
+    throw new Error(`Immich matched another asset with the same bytes (${duplicate.id}); resolve that duplicate in Immich, then retry`);
+  }
+  if (!duplicate.isTrashed) return { id: duplicate.id, rollback: false };
+
+  await restoreTrashedAssets([duplicate.id]);
+  const restored = await getAssetSnapshot(duplicate.id);
+  if (restored.isTrashed) throw new Error('Immich did not restore the trashed replacement; original retained');
+  return { id: duplicate.id, rollback: true };
+}
+
 /**
  * Removes the motion video from one still.
  *
@@ -263,31 +316,29 @@ export async function removeMotionFromAsset(assetId: string): Promise<MotionOutc
       visibility: current.visibility,
       livePhotoVideoId: null,
     });
-    if (uploaded.status !== AssetMediaStatus.Created || uploaded.id === assetId) {
-      throw new Error('Immich reported a duplicate upload; original retained and no metadata or deletion attempted');
-    }
+    const replacement = await adoptReplacement({ uploaded, original: asset, current });
 
     try {
-      const stored = await readStoredOriginalSize(uploaded.id);
+      const stored = await readStoredOriginalSize(replacement.id);
       if (!stored.readable) throw new Error('Immich could not serve the uploaded still back; original retained');
       if (stored.size !== null && stored.size !== still.size) {
         throw new Error(`Immich stored ${stored.size} bytes for the still but ${still.size} were uploaded; original retained`);
       }
       const tagIds = [...new Set(current.tagIds)];
-      await copyTagsAndAlbums({ newAssetId: uploaded.id, tagIds, albumIds });
+      await copyTagsAndAlbums({ newAssetId: replacement.id, tagIds, albumIds });
       // The live-photo link is judged after metadata extraction, in `settleReplacement`.
-      await verifyReplacement({ assetId: uploaded.id, checksum: uploaded.checksum, tagIds, albumIds });
-      await settleReplacement(uploaded.id);
+      await verifyReplacement({ assetId: replacement.id, checksum: uploaded.checksum, tagIds, albumIds });
+      await settleReplacement(replacement.id);
     } catch (error) {
-      // The replacement is unusable or unverified: drop it so the library does not keep an extra
-      // still, and leave the original in place.
-      await trashAssets([uploaded.id]).catch(() => undefined);
+      // A replacement this flow created or restored is dropped again, so the library does not keep an
+      // extra still. A live duplicate that was adopted from the library is left alone.
+      if (replacement.rollback) await trashAssets([replacement.id]).catch(() => undefined);
       throw error;
     }
 
     await removeOriginal(assetId);
     recordReplacement({ before: sourceSize, after: still.size, reclaimed: true, at: Date.now() });
-    return { status: 'stripped', replacementId: uploaded.id, bytesBefore: sourceSize, bytesAfter: still.size };
+    return { status: 'stripped', replacementId: replacement.id, bytesBefore: sourceSize, bytesAfter: still.size };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
