@@ -93,9 +93,9 @@ export function StatsTab() {
             />
             <StatTile label="Moved to trash" value={String(totals.trashed)} detail={`${totals.archived} archived`} />
             <StatTile
-              label="Live videos dropped"
-              value={String(totals.motionVideos)}
-              detail="Stills kept, motion videos trashed"
+              label="Motion removed"
+              value={String(totals.motionStills + totals.motionVideos)}
+              detail={`${totals.motionStills} still(s) rewritten · ${totals.motionVideos} video(s) unlinked`}
             />
           </div>
 
@@ -119,7 +119,7 @@ export function StatsTab() {
                         <th className="p-2">Reclaimed</th>
                         <th className="p-2">Trashed</th>
                         <th className="p-2">Archived</th>
-                        <th className="p-2">Live videos</th>
+                        <th className="p-2">Motion</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -144,7 +144,7 @@ export function StatsTab() {
                           </td>
                           <td className="p-2 text-xs tabular-nums">{month.trashed}</td>
                           <td className="p-2 text-xs tabular-nums">{month.archived}</td>
-                          <td className="p-2 text-xs tabular-nums">{month.motionVideos}</td>
+                          <td className="p-2 text-xs tabular-nums">{month.motionStills + month.motionVideos}</td>
                         </tr>
                       ))}
                     </tbody>

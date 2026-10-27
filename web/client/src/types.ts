@@ -213,6 +213,7 @@ export interface StatsBucket {
   trashed: number;
   archived: number;
   motionVideos: number;
+  motionStills: number;
   jobs: number;
   failed: number;
 }

@@ -46,7 +46,7 @@ export function MotionTab() {
       setTotal(result.total);
       setError('');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to load live photos');
+      setError(caught instanceof Error ? caught.message : 'Unable to load motion photos');
     } finally {
       setLoading(false);
     }
@@ -205,9 +205,9 @@ export function MotionTab() {
     // One toast per action: it spins from the click and shows the job's own result when it settles,
     // or the request's error if the job could not be queued at all.
     const request = watchJobToast(api.enqueueJob({ kind: MOTION, assetIds, profileId: null, compress: compressAfter }), {
-      loading: `Unlink and trash · ${assetIds.length} live photo(s)`,
-      success: (job) => job.message ?? 'Motion videos unlinked and trashed',
-      error: (error) => `Unlinking motion videos failed — ${error instanceof Error ? error.message : 'unknown error'}`,
+      loading: `Remove motion video · ${assetIds.length} still(s)`,
+      success: (job) => job.message ?? 'Motion videos removed',
+      error: (error) => `Removing motion videos failed — ${error instanceof Error ? error.message : 'unknown error'}`,
     });
     try {
       await request;
@@ -222,7 +222,7 @@ export function MotionTab() {
   const requestAction = () => {
     const assetIds = [...selected].filter((id) => !pendingAssetIds.has(id));
     if (assetIds.length === 0) {
-      toast.info('Select at least one live photo first');
+      toast.info('Select at least one motion photo first');
       return;
     }
     if (isConfirmationHidden(MOTION)) {
@@ -232,11 +232,11 @@ export function MotionTab() {
     setPending({
       kind: MOTION,
       assetIds,
-      title: `Unlink and trash the motion video for ${assetIds.length === 1 ? 'this live photo' : `${assetIds.length} live photos`}?`,
+      title: `Remove the motion video from ${assetIds.length === 1 ? 'this still' : `${assetIds.length} stills`}?`,
       description: compressAfter
-        ? 'Each still keeps its place in the library, its date, albums and tags. The paired video is detached and moved to the Immich trash, where it can be restored, and the still is then re-compressed with its best profile: the smaller version is uploaded and verified first, and only then is the still replaced, which cannot be undone.'
-        : 'Each still image keeps its place in the library and keeps its date, albums and tags; only the paired video is detached and moved to the Immich trash, where it can be restored. The original image file is never modified.',
-      confirmLabel: compressAfter ? 'Unlink, trash and compress' : 'Unlink and trash videos',
+        ? 'An Android motion photo carries its video inside the JPEG. Each still is rewritten without it, uploaded as a new asset, and checked for its tags, albums and the missing video before the original moves to the Immich trash, where it can be restored. The stripped still is then re-compressed with its best profile: the smaller version is uploaded and verified first, and only then is that still replaced, which cannot be undone.'
+        : 'An Android motion photo carries its video inside the JPEG. Each still is rewritten without it, uploaded as a new asset, and checked for its tags, albums and the missing video before the original moves to the Immich trash, where it can be restored. iPhone live photos keep their file: only the separate video is detached and trashed.',
+      confirmLabel: compressAfter ? 'Remove motion and compress' : 'Remove motion video',
     });
   };
 
@@ -286,7 +286,7 @@ export function MotionTab() {
     if (remember) {
       setConfirmationHidden(MOTION, true);
       setPromptsHidden(true);
-      toast.info('No longer asking before unlinking motion videos. Use “Re-enable prompts” to bring it back.');
+      toast.info('No longer asking before removing motion videos. Use “Re-enable prompts” to bring it back.');
     }
     void enqueue(action.assetIds);
   };
@@ -317,10 +317,10 @@ export function MotionTab() {
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <CardTitle>Live photos</CardTitle>
+              <CardTitle>Motion photos</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Still images that still carry a paired motion video (iPhone Live Photos, Samsung Motion Photos). Unlinking keeps the photo and
-                moves only the video to the trash.
+                Stills that still carry a motion video. Android motion photos keep the video inside the JPEG, so the still is rewritten without
+                it and replaced; iPhone live photos keep their file and only the separate video is detached and trashed.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -335,7 +335,7 @@ export function MotionTab() {
               </Button>
               <Button size="sm" className="w-full sm:w-auto" disabled={busy || selectableCount === 0} onClick={requestAction}>
                 {busy ? <Loader2 className="size-4 animate-spin" /> : <CircleSlash className="size-4" />}
-                {compressAfter ? 'Unlink, trash, compress' : 'Unlink and trash'} ({selectableCount})
+                {compressAfter ? 'Remove motion, compress' : 'Remove motion video'} ({selectableCount})
               </Button>
             </div>
           </div>
@@ -349,7 +349,7 @@ export function MotionTab() {
             <span className="hidden md:inline">
               Click a photo to select it · Shift+click for a range · drag a box to grab several · Cmd/Ctrl+A selects all · U unlinks · R refreshes · Esc clears
             </span>
-            <span className="md:hidden">Tap a photo to select it, or use “Select loaded live photos”. Tap Clear to deselect everything.</span>
+            <span className="md:hidden">Tap a photo to select it, or use “Select loaded motion photos”. Tap Clear to deselect everything.</span>
           </p>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
@@ -358,7 +358,7 @@ export function MotionTab() {
               <>
                 <label className="flex items-center gap-2 text-sm font-medium">
                   <Checkbox checked={allLoadedSelected} onCheckedChange={(checked) => setAllLoaded(checked === true)} />
-                  Select loaded live photos
+                  Select loaded motion photos
                 </label>
                 {selected.size > 0 ? (
                   <Button variant="ghost" size="sm" onClick={() => clearSelection()}>
