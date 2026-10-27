@@ -140,10 +140,12 @@ export async function assetHasMetadata(id: string): Promise<boolean> {
 /**
  * True while Immich still classifies an asset as a motion photo. Immich exposes this only as a search
  * filter, not on the asset itself, so this is the one way to confirm a replacement carries no video.
+ * The asset id must be part of the filter too: Immich rejects the top-level `id` field as deprecated
+ * when it is combined with a filter, and answers with HTTP 400.
  */
 export async function assetIsMotion(id: string): Promise<boolean> {
   const response = await searchAssets({
-    metadataSearchDto: { id, filter: { isMotion: { eq: true } }, size: 1 },
+    metadataSearchDto: { filter: { id: { eq: id }, isMotion: { eq: true } }, size: 1 },
   });
   return response.assets.items.some((asset) => asset.id === id);
 }
