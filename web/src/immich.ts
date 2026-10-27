@@ -13,7 +13,9 @@ import {
   getAllTags,
   getMyCalendarHeatmap,
   getPeopleThumbnailPath,
+  getQueues,
   init,
+  updateQueue,
   restoreAssets as restoreAssetsSdk,
   searchAssets,
   updateAsset,
@@ -21,12 +23,13 @@ import {
   upsertTags,
   uploadAsset,
   bulkTagAssets,
+  QueueName,
   SearchOrderField,
 } from '@immich/sdk';
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, openAsBlob } from 'node:fs';
-import { rm } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -799,3 +802,116 @@ export async function unlinkMotionVideo(assetId: string): Promise<string | null>
   return updated.livePhotoVideoId ?? null;
 }
 
+
+/**
+ * Immich queues that must keep running while a batch does. Metadata extraction stores a fresh upload
+ * in the library and writes the EXIF fields the motion check reads; with it paused, every replacement
+ * would fail verification.
+ */
+const QUEUES_NEEDED_BY_UPLOADS: readonly QueueName[] = [QueueName.MetadataExtraction];
+
+let queueMarkerPath: string | null = null;
+
+/** Remembers where the paused-queue marker lives, so a crash cannot leave Immich paused forever. */
+export function configureQueueMarker(dataDir: string): void {
+  queueMarkerPath = join(dataDir, 'paused-queues.json');
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : 'unknown error';
+}
+
+export interface QueuePause {
+  /** Queues this run paused and must resume afterwards. */
+  paused: QueueName[];
+  /** Queues left running because uploads need them. */
+  keptRunning: QueueName[];
+  /** True when metadata extraction was already paused; uploads cannot be verified then. */
+  blocked: boolean;
+  /** What went wrong, if anything. The batch still runs. */
+  error: string | null;
+}
+
+/**
+ * Pauses Immich's background queues so faces, search, thumbnails and similar work do not compete with
+ * a batch. Queues that uploads need stay running, and queues the operator had already paused are left
+ * alone. The intended list is written down before anything is paused, so a crash can be repaired at
+ * the next start instead of leaving Immich quiet forever.
+ */
+export async function pauseQueuesForBatch(): Promise<QueuePause> {
+  const result: QueuePause = { paused: [], keptRunning: [], blocked: false, error: null };
+
+  let queues: Awaited<ReturnType<typeof getQueues>>;
+  try {
+    queues = await getQueues({});
+  } catch (error) {
+    result.error = `could not read the queues (${describeError(error)})`;
+    return result;
+  }
+
+  const needed = (name: QueueName): boolean => QUEUES_NEEDED_BY_UPLOADS.includes(name);
+  result.keptRunning = queues.filter((queue) => needed(queue.name)).map((queue) => queue.name);
+  result.blocked = queues.some((queue) => needed(queue.name) && queue.isPaused);
+  // Nothing is paused when uploads cannot be verified anyway; the caller reports it and stops.
+  if (result.blocked) return result;
+  const toPause = queues.filter((queue) => !needed(queue.name) && !queue.isPaused).map((queue) => queue.name);
+
+  if (queueMarkerPath !== null) {
+    await writeFile(queueMarkerPath, `${JSON.stringify({ queues: toPause })}\n`, { mode: 0o600 }).catch(() => undefined);
+  }
+
+  const errors: string[] = [];
+  for (const name of toPause) {
+    try {
+      await updateQueue({ name, queueUpdateDto: { isPaused: true } });
+      result.paused.push(name);
+    } catch (error) {
+      errors.push(`${name}: ${describeError(error)}`);
+    }
+  }
+  if (errors.length > 0) result.error = errors.join('; ');
+  return result;
+}
+
+/** Resumes exactly the queues a batch paused. Returns what could not be resumed, if anything. */
+export async function resumeQueuesAfterBatch(names: readonly QueueName[]): Promise<string | null> {
+  const errors: string[] = [];
+  for (const name of names) {
+    try {
+      await updateQueue({ name, queueUpdateDto: { isPaused: false } });
+    } catch (error) {
+      errors.push(`${name}: ${describeError(error)}`);
+    }
+  }
+  if (queueMarkerPath !== null && errors.length === 0) await rm(queueMarkerPath, { force: true }).catch(() => undefined);
+  return errors.length > 0 ? errors.join('; ') : null;
+}
+
+/** Whether a value from the marker file is still a queue this Immich knows. */
+function markedQueueNames(value: unknown): QueueName[] {
+  if (typeof value !== 'object' || value === null || !Array.isArray((value as { queues?: unknown }).queues)) return [];
+  const known = new Set<string>(Object.values(QueueName));
+  return ((value as { queues: unknown[] }).queues).filter((name): name is QueueName => typeof name === 'string' && known.has(name));
+}
+
+/**
+ * Resumes queues that a previous run paused but never resumed, for example after the container was
+ * restarted mid-batch. Called once at startup; an unreadable marker is ignored.
+ */
+export async function resumeQueuesLeftPaused(): Promise<string | null> {
+  if (queueMarkerPath === null) return null;
+  let marked: unknown;
+  try {
+    marked = JSON.parse(await readFile(queueMarkerPath, 'utf8'));
+  } catch {
+    return null;
+  }
+  const queues = markedQueueNames(marked);
+  if (queues.length === 0) {
+    await rm(queueMarkerPath, { force: true }).catch(() => undefined);
+    return null;
+  }
+  const error = await resumeQueuesAfterBatch(queues);
+  console.warn(`resumed ${queues.length} Immich queue(s) a previous run left paused${error ? ` (${error})` : ''}`);
+  return error;
+}

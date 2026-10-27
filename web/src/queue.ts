@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { applyBatchResults, createBatch, getBatch, BatchRequestError, type BatchView } from './batches.js';
-import { archiveAssets, getAssetSnapshot, tagAndArchiveAssets, tagAssetIfMissing, trashAssets } from './immich.js';
+import { archiveAssets, getAssetSnapshot, pauseQueuesForBatch, resumeQueuesAfterBatch, tagAndArchiveAssets, tagAssetIfMissing, trashAssets } from './immich.js';
 import { removeMotionFromAsset } from './motion.js';
 import { bestProfileFor, type ProfileId } from './optimizer.js';
 import { recordJob } from './stats.js';
@@ -258,6 +258,28 @@ async function runFocusedReview(job: JobView): Promise<void> {
  * motion photo. A separate video asset (iPhone live photo) is still detached and trashed alone.
  */
 async function runRemoveMotion(job: JobView): Promise<JobOutcome> {
+  // Immich's background work is paused for the batch: faces, search, thumbnails and the like would
+  // otherwise compete with the uploads. Metadata extraction stays on, because it stores each upload
+  // and writes the EXIF fields this job verifies.
+  const queues = await pauseQueuesForBatch();
+  if (queues.blocked) {
+    throw new Error('The Immich queue metadataExtraction is paused; resume it under Administration → Jobs, then retry');
+  }
+  const queueNotes: string[] = [];
+  if (queues.error !== null) queueNotes.push(`Immich queues were not fully paused (${queues.error})`);
+
+  try {
+    return await removeMotionFromEveryAsset(job);
+  } finally {
+    const resumeError = await resumeQueuesAfterBatch(queues.paused);
+    if (resumeError !== null) console.error(`unable to resume Immich queues: ${resumeError}`);
+    const warnings = [...queueNotes];
+    if (resumeError !== null) warnings.push(`Immich queues not resumed (${resumeError})`);
+    if (warnings.length > 0) job.message = `${job.message ?? 'Motion job finished'} — ${warnings.join(' · ')}`;
+  }
+}
+
+async function removeMotionFromEveryAsset(job: JobView): Promise<JobOutcome> {
   const resolved: string[] = [];
   // Stills that can be compressed afterwards: the replacement for a rewritten JPEG, the still itself
   // for a live photo whose video was only unlinked.
