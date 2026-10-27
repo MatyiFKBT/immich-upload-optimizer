@@ -131,6 +131,23 @@ export async function getAlbumIdsForAsset(id: string): Promise<string[]> {
   return albums.map((album) => album.id);
 }
 
+/** Whether Immich has finished extracting an asset's metadata, so EXIF-derived fields are final. */
+export async function assetHasMetadata(id: string): Promise<boolean> {
+  const asset = await getAssetInfo({ id });
+  return asset.hasMetadata;
+}
+
+/**
+ * True while Immich still classifies an asset as a motion photo. Immich exposes this only as a search
+ * filter, not on the asset itself, so this is the one way to confirm a replacement carries no video.
+ */
+export async function assetIsMotion(id: string): Promise<boolean> {
+  const response = await searchAssets({
+    metadataSearchDto: { id, filter: { isMotion: { eq: true } }, size: 1 },
+  });
+  return response.assets.items.some((asset) => asset.id === id);
+}
+
 
 async function streamResponseToFile(response: Response, destination: string): Promise<number> {
   if (!response.ok || !response.body) {

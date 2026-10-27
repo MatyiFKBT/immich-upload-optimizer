@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { applyBatchResults, createBatch, getBatch, BatchRequestError, type BatchView } from './batches.js';
-import { archiveAssets, getAssetBrief, getAssetSnapshot, tagAndArchiveAssets, tagAssetIfMissing, trashAssets, unlinkMotionVideo } from './immich.js';
+import { archiveAssets, getAssetSnapshot, tagAndArchiveAssets, tagAssetIfMissing, trashAssets } from './immich.js';
+import { removeMotionFromAsset } from './motion.js';
 import { bestProfileFor, type ProfileId } from './optimizer.js';
 import { recordJob } from './stats.js';
 
@@ -43,6 +44,8 @@ export interface JobView {
 interface JobOutcome {
   /** Motion jobs: how many videos were unlinked from a still and moved to the trash. */
   motionVideos: number;
+  /** Motion jobs: how many stills were rewritten to remove an embedded motion video. */
+  motionStills: number;
 }
 
 const MAX_JOBS = 200;
@@ -176,6 +179,7 @@ async function drain(): Promise<void> {
         failed: job.status === 'failed',
         settled: job.resolvedIds.length,
         motionVideos: outcome?.motionVideos ?? 0,
+        motionStills: outcome?.motionStills ?? 0,
         tag: job.tag,
         reviewTrashed: job.trashCount,
         reviewTagCounts: job.tagCounts,
@@ -212,7 +216,7 @@ async function executeJob(job: JobView): Promise<JobOutcome | undefined> {
     return;
   }
   if (job.kind === 'motion') {
-    return runUnlinkMotion(job);
+    return runRemoveMotion(job);
   }
   await runCompression(job);
 }
@@ -248,15 +252,20 @@ async function runFocusedReview(job: JobView): Promise<void> {
 }
 
 /**
- * Detaches and trashes the motion video behind each still. The video is only trashed after Immich
- * confirms the link is gone, so a still never ends up pointing at a trashed video.
+ * Removes the motion video from each still. Android motion photos carry the video inside the JPEG,
+ * so those stills are rewritten and uploaded as a verified replacement; the original only goes to
+ * the Immich trash after the new asset is proven readable, tagged, in its albums, and no longer a
+ * motion photo. A separate video asset (iPhone live photo) is still detached and trashed alone.
  */
-async function runUnlinkMotion(job: JobView): Promise<JobOutcome> {
+async function runRemoveMotion(job: JobView): Promise<JobOutcome> {
   const resolved: string[] = [];
-  const unlinkedIds: string[] = [];
+  // Stills that can be compressed afterwards: the replacement for a rewritten JPEG, the still itself
+  // for a live photo whose video was only unlinked.
+  const compressibleIds: string[] = [];
   const failures: string[] = [];
   const lastCompressionNotes: string[] = [];
   let unlinked = 0;
+  let stripped = 0;
   let skipped = 0;
 
   for (const assetId of job.assetIds) {
@@ -264,43 +273,35 @@ async function runUnlinkMotion(job: JobView): Promise<JobOutcome> {
     try {
       const asset = await getAssetSnapshot(assetId);
       label = asset.originalFileName;
-      const videoId = asset.livePhotoVideoId;
-      if (!videoId) {
+      const outcome = await removeMotionFromAsset(assetId);
+      if (outcome.status === 'skipped') {
         skipped += 1;
         resolved.push(assetId);
         continue;
       }
-      // Never trust the link blindly: it must point at a different, live video asset, otherwise the
-      // trash step could remove the still itself or an unrelated asset.
-      if (videoId === assetId) {
-        failures.push(`${label}: Immich reports the motion video as the image itself; nothing was changed`);
-        continue;
-      }
-      const linked = await getAssetBrief(videoId);
-      if (!linked.isVideo || linked.isTrashed) {
-        failures.push(`${label}: linked asset is ${linked.isTrashed ? 'already trashed' : 'not a video'}; nothing was changed`);
-        continue;
-      }
-      const remaining = await unlinkMotionVideo(assetId);
-      if (remaining) throw new Error('Immich still reports the motion video as linked');
-      await trashAssets([videoId]);
-      unlinked += 1;
-      unlinkedIds.push(assetId);
       resolved.push(assetId);
+      if (outcome.status === 'stripped') {
+        stripped += 1;
+        compressibleIds.push(outcome.replacementId);
+      } else {
+        unlinked += 1;
+        compressibleIds.push(assetId);
+      }
     } catch (error) {
       failures.push(`${label}: ${error instanceof Error ? error.message : 'failed'}`);
     }
   }
 
-  const parts = [`Unlinked and trashed ${unlinked} motion video(s)`];
-  if (skipped > 0) parts.push(`${skipped} had no linked video`);
+  const parts = [stripped > 0 ? `Rewrote ${stripped} still(s) without their motion video` : 'No still needed rewriting'];
+  if (unlinked > 0) parts.push(`${unlinked} linked video(s) unlinked and trashed`);
+  if (skipped > 0) parts.push(`${skipped} had no motion video`);
   if (failures.length > 0) parts.push(`${failures.length} failed`);
 
-  // Videos are gone by now, so a compressed replacement can never inherit a dead motion link.
+  // Motion data is gone by now, so a compressed replacement can never inherit a dead motion link.
   const byProfile = new Map<ProfileId, string[]>();
   let unsupported = 0;
   if (job.compress) {
-    for (const assetId of unlinkedIds) {
+    for (const assetId of compressibleIds) {
       const asset = await getAssetSnapshot(assetId);
       const profileId = bestProfileFor(asset);
       if (!profileId) {
@@ -333,7 +334,7 @@ async function runUnlinkMotion(job: JobView): Promise<JobOutcome> {
   job.failed += failures.length;
   const notes = [...failures, ...lastCompressionNotes];
   job.message = `${parts.join(', ')}${notes.length > 0 ? ` — ${notes.slice(0, 2).join(' · ')}` : ''}`;
-  return { motionVideos: unlinked };
+  return { motionVideos: unlinked, motionStills: stripped };
 }
 
 

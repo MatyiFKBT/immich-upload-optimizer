@@ -16,7 +16,7 @@ function jobLabel(job: Job): string {
     case 'tagArchive':
       return job.tag ? `Tag as “${job.tag}” and archive` : 'Tag and archive';
     case 'motion':
-      return 'Unlink and trash motion video';
+      return 'Remove motion video';
     case 'review':
       return 'Focused monthly review';
   }

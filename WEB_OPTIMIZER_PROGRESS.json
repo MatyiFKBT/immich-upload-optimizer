@@ -1,9 +1,9 @@
 {
   "project": "Immich Web Media Optimizer",
   "overall_progress_percent": 97,
-  "completed_steps": 28,
-  "total_steps": 29,
-  "updated_at": "2026-10-19",
+  "completed_steps": 29,
+  "total_steps": 30,
+  "updated_at": "2026-10-27",
   "steps": [
     {
       "id": "plan-and-tracker",
@@ -98,10 +98,17 @@
     },
     {
       "id": "motion-tab",
-      "title": "Live photo tab: unlink and trash paired motion videos",
+      "title": "Motion-photo tab: remove the motion video",
       "status": "completed",
       "progress_percent": 100,
-      "notes": "New tab lists stills that still reference a motion video (SearchFilter.isMotion, guarded by livePhotoVideoId) with load-more paging. Unlinking uses PUT /assets/{id} with livePhotoVideoId null and only trashes the video after Immich confirms the link is gone. An optional flag then compresses each unlinked still with bestProfileFor (AVIF per source family), grouped per profile and run through the existing batch pipeline once the videos are gone. Motion links are validated (different id, untrashed video asset) before anything is unlinked or trashed, replacements must be readable back with the exact uploaded size before an original is removed, and an interrupted compression is reported as still applying rather than failed. Selection supports click, shift-click ranges, drag-box marquee, Cmd/Ctrl+A and Esc, and photos with a queued job are excluded from every selection path."
+      "notes": "The tab lists stills that still reference a motion video (SearchFilter.isMotion, guarded by livePhotoVideoId) with load-more paging. Android motion photos carry the video inside the JPEG, so those stills are rewritten with exiftool (Google camera and container metadata plus the trailer removed), checked to be a smaller, valid JPEG of the same pixel size with no motion data left, and uploaded as a new asset with the original dates, favorite flag, visibility, tags and albums, all verified; the original only goes to the Immich trash after Immich also no longer reports the replacement as motion. iPhone live photos keep the old path: unlink the separate video and trash it once Immich confirms the link is gone, leaving the still untouched. An optional flag then compresses the resulting still with bestProfileFor (AVIF per source family) through the existing batch pipeline. Selection supports click, shift-click ranges, drag-box marquee, Cmd/Ctrl+A and Esc, and photos with a queued job are excluded from every selection path."
+    },
+    {
+      "id": "motion-still-rewrite",
+      "title": "Rewrite Android motion-photo JPEGs without their embedded video",
+      "status": "completed",
+      "progress_percent": 100,
+      "notes": "web/src/motion.ts downloads the original, verifies its checksum, and uses exiftool (-XMP-GCamera:all=, -XMP-GContainer:all=, -Trailer:All=) to copy the still; the result must be a smaller JPEG with the same pixel size that ends at the JPEG end marker and carries no Google camera/container metadata, measured with ImageMagick. The still is uploaded with livePhotoVideoId null, its stored size and bytes are read back, tags and album memberships are copied and verified, and Immich is asked (after metadata extraction) whether it still counts the replacement as motion. Only then is the original moved to the Immich trash; a later failure trashes the replacement and keeps the original. The web image now installs libimage-exiftool-perl. A Vitest suite builds a synthetic motion JPEG and checks detection, the rewrite and the size guard; it is skipped when exiftool or magick is missing."
     },
     {
       "id": "ci-publish",

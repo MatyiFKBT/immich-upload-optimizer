@@ -25,7 +25,7 @@ const KIND_LABEL: Record<ConfirmKind, string> = {
   trash: 'trash',
   archive: 'archive',
   tagArchive: 'tag and archive',
-  motion: 'unlink and trash motion video',
+  motion: 'remove motion video',
 };
 
 interface Props {

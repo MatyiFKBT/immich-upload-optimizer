@@ -18,6 +18,8 @@ export interface JobRecord {
   settled: number;
   /** Motion jobs only: videos unlinked from a still and moved to the trash. */
   motionVideos: number;
+  /** Motion jobs only: stills rewritten to drop an embedded motion video. */
+  motionStills: number;
   /** `tagArchive` jobs only: the tag applied before archiving. */
   tag: string | null;
   /** Focused review jobs only: assets actually moved to the reversible Immich trash. */
@@ -46,6 +48,7 @@ export interface StatsCounters {
   trashed: number;
   archived: number;
   motionVideos: number;
+  motionStills: number;
   jobs: number;
   failed: number;
 }
@@ -83,7 +86,7 @@ const MAX_MONTHS = 240;
 const WRITE_DELAY_MS = 500;
 
 function emptyCounters(): StatsCounters {
-  return { optimized: 0, bytesBefore: 0, bytesAfter: 0, trashed: 0, archived: 0, motionVideos: 0, jobs: 0, failed: 0 };
+  return { optimized: 0, bytesBefore: 0, bytesAfter: 0, trashed: 0, archived: 0, motionVideos: 0, motionStills: 0, jobs: 0, failed: 0 };
 }
 
 let store: Store = { version: STORE_VERSION, startedAt: 0, updatedAt: Date.now(), totals: emptyCounters(), months: {}, byTag: {} };
@@ -108,6 +111,7 @@ function readCounters(value: unknown): StatsCounters {
     trashed: countNumber(raw.trashed),
     archived: countNumber(raw.archived),
     motionVideos: countNumber(raw.motionVideos),
+    motionStills: countNumber(raw.motionStills),
     jobs: countNumber(raw.jobs),
     failed: countNumber(raw.failed),
   };
@@ -195,7 +199,10 @@ export function recordJob(record: JobRecord): void {
     if (record.kind === 'trash') target.trashed += record.settled;
     if (record.kind === 'review') target.trashed += record.reviewTrashed;
     if (record.kind === 'archive' || record.kind === 'tagArchive') target.archived += record.settled;
-    if (record.kind === 'motion') target.motionVideos += record.motionVideos;
+    if (record.kind === 'motion') {
+      target.motionVideos += record.motionVideos;
+      target.motionStills += record.motionStills;
+    }
   }
   if (record.tag !== null && record.settled > 0) {
     store.byTag[record.tag] = (store.byTag[record.tag] ?? 0) + record.settled;

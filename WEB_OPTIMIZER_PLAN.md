@@ -40,12 +40,14 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - Every confirmation offers a "don't ask again" checkbox stored per action kind in local storage, with a *Re-enable prompts* control in the month toolbar.
 - A prepared run that produced nothing eligible finishes itself instead of holding the single active-run slot, and any prepared run can be discarded (`POST /api/batches/:id/abandon`); the monthly compression flow abandons its own run when it cannot complete.
 
-### Live photo tab (third tab)
+### Motion photo tab (third tab)
 
-- Lists still images that still reference a motion video, discovered with `SearchFilter.isMotion` and kept only when `livePhotoVideoId` is present, so the video to unlink is always known. Paged with a load-more cursor.
-- "Unlink and trash" detaches the video with `PUT /assets/{id}` and `livePhotoVideoId: null`, then trashes the video alone with a non-forced delete. The video is only trashed after Immich reports the link is gone, so a still cannot end up pointing at a trashed video; the still's own file, date, albums and tags are untouched.
+- Lists still images that still reference a motion video, discovered with `SearchFilter.isMotion` and kept only when `livePhotoVideoId` is present, so the video to remove is always known. Paged with a load-more cursor.
+- Android motion photos keep the video inside the JPEG. For a JPEG, the server downloads the original, verifies its Immich checksum, and uses `exiftool` to copy the still with `-XMP-GCamera:all=`, `-XMP-GContainer:all=` and `-Trailer:All=`. The result must be a smaller, valid JPEG with the same pixel size, ending at the JPEG end marker, with no motion metadata left. It is then uploaded with `livePhotoVideoId: null`, its stored bytes are read back, and the original tags and album memberships are copied and verified. Immich is asked (after metadata extraction) whether it still counts the replacement as a motion photo; only then is the original moved to the non-forced Immich trash. A failure after the upload moves the replacement to the trash and keeps the original.
+- iPhone live photos keep the old path: the separate video asset is detached with `PUT /assets/{id}` and `livePhotoVideoId: null`, then trashed alone once Immich reports the link is gone; the still's own file, date, albums and tags are untouched.
 - Runs through the same job queue as the other library actions, so it is non-blocking and cancellable while queued.
-- An opt-in *compress afterwards* flag re-compresses each unlinked still with the profile chosen automatically per format (`bestProfileFor`: AVIF for JPEG and HEIC/HEIF, because JXL would not render in a browser given the app bypasses the proxy's download conversion). Stills are grouped per profile and compressed with the existing batch pipeline, delete-original on, after the videos are gone so a replacement never inherits a dead motion link.
+- An opt-in *compress afterwards* flag re-compresses each resulting still (the rewritten replacement for Android, the unlinked still for iPhone) with the profile chosen automatically per format (`bestProfileFor`: AVIF for JPEG and HEIC/HEIF, because JXL would not render in a browser given the app bypasses the proxy's download conversion). Stills are grouped per profile and compressed with the existing batch pipeline, delete-original on, after the motion data is gone so a replacement never inherits a dead motion link.
+- The rewrite applies to JPEG only; the web image installs `exiftool` for it. A motion photo in another format is reported as unsupported instead of being changed.
 
 ### Stats tab (fourth tab)
 
@@ -58,7 +60,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 
 - Add a Hono/Node backend-for-frontend that uses `@immich/sdk` server-side. The browser calls only this service; the Immich API key is never returned to browser code.
 - Build the UI as a React SPA bundled by Vite; React reconciliation keeps asset thumbnails attached to stable element keys, so polling never re-creates or re-requests them.
-- Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a four-tab shell (Compress, Monthly cleanup, Live photos, Stats) with the shared Immich client in `web/client/src/api.ts`.
+- Style the SPA with Tailwind CSS v4 and shadcn/ui; the app is a four-tab shell (Compress, Monthly cleanup, Motion photos, Stats) with the shared Immich client in `web/client/src/api.ts`.
 - Keep navigational and search state in the URL with `nuqs` and its plain-React adapter (no router is needed): the open tab, the monthly review's year/month/archived/focused-mode switch, and the compress form's filters. Navigation pushes history so Back walks the tabs, years, and months; filters replace it.
 - Use `@tanstack/react-hotkeys` for opt-in, scoped desktop shortcuts in the full-screen review; shortcuts do not fire inside inputs, tag controls, or dialogs.
 - Long lists virtualize rather than paginate: the month grid renders through `@tanstack/react-virtual` with the window as its scroll element, so a mounted month holds the rows around the viewport instead of thousands of tiles. The container's measured width decides the track count, which keeps the CSS grid and the row layout on the same number, and every row is measured after its first paint so estimated heights only fill the gap until then.
@@ -107,8 +109,8 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 
 - A candidate that is the same size or larger than its source cannot be uploaded.
 - The original is retained by default and is never deleted before a replacement's existence, copied tags, and album membership are verified through Immich.
-- Preserve and verify the linked video asset ID for Live Photos before any optional deletion of the source image.
-- A motion link is never trusted blindly: the linked id must differ from the still and must be an untrashed video asset before the video is unlinked or trashed, so a broken link cannot remove the still.
+- Preserve and verify the linked video asset ID for iPhone Live Photos before any optional deletion of the source image.
+- A motion link is never trusted blindly: the linked id must differ from the still and must be an untrashed video asset before the video is unlinked or trashed, so a broken link cannot remove the still. An embedded Android motion video is only accepted as removed after the rewritten JPEG is re-read with no motion metadata, is a smaller valid JPEG of the same pixel size, and Immich no longer reports the replacement as a motion photo.
 - A replacement must be readable back from Immich with exactly the uploaded byte count before any original is removed; a failure at any earlier step retains the original.
 - Failed or ambiguous replacement operations report their state and leave the original intact.
 - Temporary source and candidate data is removed when no longer needed; persistent state, if required for recoverability, must not trigger automatic deletion after restart.
@@ -126,7 +128,7 @@ Add a separately deployable, minimal web interface to search an existing Immich 
 - The monthly tab shows per-month capture counts for a year and loads a selected month as thumbnails only.
 - Assets captured in the same minute are grouped, keep/trash marks drive the per-group actions, and ungrouped assets expose compress, trash, and archive per asset.
 - Trash uses the non-forced delete so it stays restorable in Immich; standard cleanup actions are confirmed and focused review requires an explicit per-stack Apply action.
-- The live-photo tab lists stills with a paired motion video and can drop the video alone, leaving the image, its metadata and its album memberships intact, and supports click, shift-click, drag-box, Cmd/Ctrl+A and Esc selection.
+- The motion-photo tab removes the video from Android stills by rewriting the JPEG and only then trashing the original, and still drops the separate video of iPhone live photos, leaving image metadata and album memberships intact; it supports click, shift-click, drag-box, Cmd/Ctrl+A and Esc selection.
 - Library actions are queued and run one after another, so a user can start many without waiting for any one to finish, and a queued job can be cancelled.
 - A replacement carries the `optimized` tag and the month view marks assets that already have it.
 - A push to `web-ui` publishes a pullable web image to GHCR tagged with the commit hash.

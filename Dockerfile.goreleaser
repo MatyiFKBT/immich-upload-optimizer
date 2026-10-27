@@ -112,7 +112,8 @@ COPY web/ ./
 RUN npm run build && npm prune --omit=dev
 
 FROM optimizer-runtime AS web
-RUN apt-get -y update && apt-get install -qq -y --no-install-recommends ca-certificates nodejs \
+# exiftool rewrites Android motion-photo JPEGs without their embedded video.
+RUN apt-get -y update && apt-get install -qq -y --no-install-recommends ca-certificates nodejs libimage-exiftool-perl \
     && apt-get clean && rm -fr /var/lib/apt/lists/*
 WORKDIR /opt/immich-web
 COPY --from=web-build /opt/immich-web/package.json ./package.json

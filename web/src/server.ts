@@ -11,6 +11,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { loadConfig, type AppConfig } from './config.js';
 import { abandonBatch, advanceCompareBatch, applyBatchResults, BatchRequestError, createBatch, getBatch, initializeBatches, validateAssetId } from './batches.js';
 import { configureImmich, estimateMonthStorage, getMonthCounts, listAlbums, listMonthAssets, listMotionPhotos, listOptimizedAssetIds, searchImages, streamPersonThumbnail, streamThumbnail, type ThumbnailSize } from './immich.js';
+import { initializeMotion } from './motion.js';
 import { compatibleProfiles, PROFILES } from './optimizer.js';
 import { cancelJob, enqueueJob, initializeQueue, listJobs, type ReviewDecision } from './queue.js';
 import { getStats, initializeStats } from './stats.js';
@@ -401,6 +402,7 @@ async function main(): Promise<void> {
   configureImmich(config.immichApiBaseUrl, config.immichApiKey);
   await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
   await initializeBatches(config.dataDir);
+  await initializeMotion(config.dataDir);
   await initializeStats(config.dataDir);
   initializeQueue(config.extraButtons.map((button) => button.label));
 

@@ -55,7 +55,7 @@ export function bestProfileFor(asset: { originalFileName: string; originalMimeTy
   return compatibleProfiles(asset).some((profile) => profile.id === preferred) ? preferred : null;
 }
 
-function runProcess(command: string, args: string[], timeoutMs = 10 * 60 * 1000): Promise<string> {
+export function runProcess(command: string, args: string[], timeoutMs = 10 * 60 * 1000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
