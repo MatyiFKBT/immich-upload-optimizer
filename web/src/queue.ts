@@ -53,6 +53,8 @@ const JOB_TIMEOUT_MS = 30 * 60 * 1000;
 const BATCH_SLOT_WAIT_MS = 15 * 60 * 1000;
 const SLOT_RETRY_MS = 3000;
 const BATCH_POLL_MS = 1000;
+/** Stills processed at once inside one motion job; each item is independent of the others. */
+const MOTION_WORKERS = 2;
 
 const jobs: JobView[] = [];
 let draining = false;
@@ -290,29 +292,41 @@ async function removeMotionFromEveryAsset(job: JobView): Promise<JobOutcome> {
   let stripped = 0;
   let skipped = 0;
 
-  for (const assetId of job.assetIds) {
-    let label = assetId;
-    try {
-      const asset = await getAssetSnapshot(assetId);
-      label = asset.originalFileName;
-      const outcome = await removeMotionFromAsset(assetId);
-      if (outcome.status === 'skipped') {
-        skipped += 1;
+  // Two stills at a time: the pipeline mostly waits on Immich (download, upload, metadata), so a
+  // second worker overlaps those waits. Each asset is independent, so failures and results stay
+  // per asset. The job queue itself still runs one job at a time.
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      const assetId = job.assetIds[index];
+      if (assetId === undefined) return;
+
+      let label = assetId;
+      try {
+        const asset = await getAssetSnapshot(assetId);
+        label = asset.originalFileName;
+        const outcome = await removeMotionFromAsset(assetId);
+        if (outcome.status === 'skipped') {
+          skipped += 1;
+          resolved.push(assetId);
+          continue;
+        }
         resolved.push(assetId);
-        continue;
+        if (outcome.status === 'stripped') {
+          stripped += 1;
+          compressibleIds.push(outcome.replacementId);
+        } else {
+          unlinked += 1;
+          compressibleIds.push(assetId);
+        }
+      } catch (error) {
+        failures.push(`${label}: ${error instanceof Error ? error.message : 'failed'}`);
       }
-      resolved.push(assetId);
-      if (outcome.status === 'stripped') {
-        stripped += 1;
-        compressibleIds.push(outcome.replacementId);
-      } else {
-        unlinked += 1;
-        compressibleIds.push(assetId);
-      }
-    } catch (error) {
-      failures.push(`${label}: ${error instanceof Error ? error.message : 'failed'}`);
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(MOTION_WORKERS, job.assetIds.length) }, worker));
 
   const parts = [stripped > 0 ? `Rewrote ${stripped} still(s) without their motion video` : 'No still needed rewriting'];
   if (unlinked > 0) parts.push(`${unlinked} linked video(s) unlinked and trashed`);
