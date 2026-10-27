@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { assetIsMotion, configureImmich, readMotionState } from '../src/immich.js';
+import { assetIsMotion, configureImmich, copyTagsAndAlbums, readMotionState } from '../src/immich.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -34,6 +34,39 @@ describe('assetIsMotion', () => {
     });
     expect(requests[0]?.body).not.toHaveProperty('id');
   });
+
+  it('retries the tag request until Immich makes the tags readable', async () => {
+    configureImmich('http://immich.test/api', 'test-key');
+    let tagRequests = 0;
+    let tagReads = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      if (url.endsWith('/tags/assets')) {
+        tagRequests += 1;
+        return new Response(JSON.stringify({ count: 1 }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      // Immich acknowledges the tag request before the links are readable: the first read is empty.
+      tagReads += 1;
+      const tags = tagReads >= 2 ? (body?.tagIds ?? ['tag-1']).map((id: string) => ({ id })) : [];
+      return new Response(JSON.stringify({ id: 'asset-1', tags }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    await expect(copyTagsAndAlbums({ newAssetId: 'asset-1', tagIds: ['tag-1'], albumIds: [] })).resolves.toBeUndefined();
+    expect(tagRequests).toBe(2);
+    expect(tagReads).toBe(2);
+  });
+
+  it('gives up when the tags never become readable', async () => {
+    configureImmich('http://immich.test/api', 'test-key');
+    globalThis.fetch = (async (input: RequestInfo | URL) =>
+      new Response(JSON.stringify(String(input).endsWith('/tags/assets') ? { count: 0 } : { id: 'asset-1', tags: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+
+    await expect(copyTagsAndAlbums({ newAssetId: 'asset-1', tagIds: ['tag-1'], albumIds: [] })).rejects.toThrow(/still missing/);
+  }, 10_000);
 
   it('reads the motion state and readiness of a fresh upload', async () => {
     configureImmich('http://immich.test/api', 'test-key');

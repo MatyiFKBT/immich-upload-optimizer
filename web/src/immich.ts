@@ -301,13 +301,43 @@ export async function uploadReplacement(options: {
   return { id: result.id, status: result.status, checksum };
 }
 
+const TAG_APPLY_ATTEMPTS = 8;
+const TAG_APPLY_RETRY_MS = 300;
+
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
+
+async function assetHasTags(assetId: string, tagIds: string[]): Promise<boolean> {
+  const asset = await getAssetInfo({ id: assetId });
+  const actual = new Set((asset.tags ?? []).map((tag) => tag.id));
+  return tagIds.every((id) => actual.has(id));
+}
+
+/**
+ * Applies the original's tags and album memberships to a fresh asset.
+ *
+ * Immich can answer the tag request with 200 while the links are not yet readable, especially while it
+ * is still moving a new upload from the upload directory into the library. So the tags are read back
+ * and the (idempotent) request is repeated until they stick. Without this, verification refuses a
+ * perfectly good replacement for missing tags that Immich simply had not written yet.
+ */
 export async function copyTagsAndAlbums(options: {
   newAssetId: string;
   tagIds: string[];
   albumIds: string[];
 }): Promise<void> {
   if (options.tagIds.length > 0) {
-    await bulkTagAssets({ tagBulkAssetsDto: { assetIds: [options.newAssetId], tagIds: options.tagIds } });
+    for (let attempt = 1; ; attempt += 1) {
+      const result = await bulkTagAssets({ tagBulkAssetsDto: { assetIds: [options.newAssetId], tagIds: options.tagIds } });
+      if (await assetHasTags(options.newAssetId, options.tagIds)) break;
+      if (attempt >= TAG_APPLY_ATTEMPTS) {
+        throw new Error(`Immich tagged ${result.count} of 1 replacement asset(s); ${options.tagIds.length} tag(s) still missing`);
+      }
+      await delay(TAG_APPLY_RETRY_MS);
+    }
   }
   if (options.albumIds.length > 0) {
     const result = await addAssetsToAlbums({
