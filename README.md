@@ -93,6 +93,15 @@ docker pull ghcr.io/<owner>/immich-upload-optimizer-web:<commit-sha>  # an exact
 
 The image is a separate GHCR package from the proxy image, which GoReleaser publishes as `ghcr.io/<owner>/immich-upload-optimizer`, so the two `:latest` tags never collide. To run the published image instead of building locally, point `image:` at `ghcr.io/<owner>/immich-upload-optimizer-web:latest` in the service below and drop its `build:` block.
 
+The repository root contains a ready-made `docker-compose.yml` and `.env.example`. For the published image:
+
+```sh
+cp .env.example .env    # fill in IMMICH_URL, IMMICH_API_KEY and WEB_PASSWORD
+docker compose up -d
+```
+
+To build from this checkout instead of pulling, uncomment the `build:` block in `docker-compose.yml` and run `docker compose up -d --build`.
+
 Example Compose service (create protected secret files outside the repository):
 
 ```yaml

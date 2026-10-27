@@ -1,0 +1,57 @@
+# Immich Web Media Optimizer
+#
+#   cp .env.example .env      # then edit .env
+#   docker compose up -d
+#
+# The image is published from the `web-ui` branch. To build it from this checkout instead, comment
+# out `image:` and uncomment `build:` below.
+
+services:
+  immich-web-optimizer:
+    image: ${IMMICH_WEB_IMAGE:-ghcr.io/matyifkbt/immich-upload-optimizer-web:latest}
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.goreleaser
+    #   target: web
+    container_name: immich-web-optimizer
+    ports:
+      # Reachable on localhost only; put an HTTPS reverse proxy in front for remote access.
+      - "127.0.0.1:${HOST_PORT:-3000}:3000"
+    environment:
+      IMMICH_URL: ${IMMICH_URL:?set IMMICH_URL in .env}
+      IMMICH_API_KEY: ${IMMICH_API_KEY:?set IMMICH_API_KEY in .env}
+      WEB_PASSWORD: ${WEB_PASSWORD:?set WEB_PASSWORD in .env, at least 12 characters}
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 3000
+      WEB_DATA_DIR: /data
+      # Optional: only true behind a proxy that authenticates every request; see README.md.
+      WEB_AUTH_DISABLED: ${WEB_AUTH_DISABLED:-false}
+      # Optional: extra cleanup buttons, as label:lucide-icon pairs from https://lucide.dev/icons
+      EXTRA_BUTTONS: ${EXTRA_BUTTONS:-}
+    extra_hosts:
+      # Lets IMMICH_URL=http://host.docker.internal:2283 reach Immich published on this host.
+      - host.docker.internal:host-gateway
+    volumes:
+      # Keeps stats.json and the optimizer's work directory between restarts.
+      - optimizer-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  optimizer-data:

@@ -5,3 +5,6 @@ go_build
 web/node_modules/
 web/client/node_modules/
 web/dist/
+# Local compose settings and secret files (see .env.example)
+.env
+secrets/
